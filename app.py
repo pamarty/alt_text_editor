@@ -1,4 +1,5 @@
 import os
+import tempfile
 from flask import Flask, request, render_template, send_file
 from werkzeug.utils import secure_filename
 import zipfile
@@ -6,7 +7,7 @@ from bs4 import BeautifulSoup
 import base64
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = 'uploads/'
+app.config['UPLOAD_FOLDER'] = tempfile.gettempdir()  # Use the system's temporary directory
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max-limit
 
 def extract_images_and_descriptions(epub_path):
@@ -41,9 +42,11 @@ def extract_images_and_descriptions(epub_path):
     return images
 
 def update_epub_descriptions(epub_path, new_descriptions):
+    temp_dir = tempfile.mkdtemp()
+    new_epub_path = os.path.join(temp_dir, 'updated_' + os.path.basename(epub_path))
+    
     with zipfile.ZipFile(epub_path, 'r') as zip_ref:
-        new_zip_path = epub_path.replace('.epub', '_updated.epub')
-        with zipfile.ZipFile(new_zip_path, 'w') as new_zip:
+        with zipfile.ZipFile(new_epub_path, 'w') as new_zip:
             for item in zip_ref.infolist():
                 with zip_ref.open(item.filename) as file:
                     if item.filename.endswith(('.xhtml', '.html', '.htm')):
@@ -70,7 +73,7 @@ def update_epub_descriptions(epub_path, new_descriptions):
                         new_zip.writestr(item.filename, str(soup))
                     else:
                         new_zip.writestr(item.filename, file.read())
-    return new_zip_path
+    return new_epub_path
 
 @app.route('/', methods=['GET', 'POST'])
 def upload_file():
@@ -105,8 +108,7 @@ def update_descriptions():
             new_descriptions[src]['long_desc'] = value
     epub_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     updated_epub_path = update_epub_descriptions(epub_path, new_descriptions)
-    return send_file(updated_epub_path, as_attachment=True)
+    return send_file(updated_epub_path, as_attachment=True, download_name=f"updated_{filename}")
 
 if __name__ == '__main__':
-    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
     app.run(debug=True)
