@@ -21,40 +21,39 @@ def extract_images_and_descriptions(epub_path):
 
         # Parse the OPF file to get the spine
         with zip_ref.open(opf_path) as opf_file:
-            opf_soup = BeautifulSoup(opf_file, 'xml')
-            spine = opf_soup.find('spine')
-            if not spine:
+            opf_soup = BeautifulSoup(opf_file, 'lxml-xml')
+            manifest = opf_soup.find('manifest')
+            if not manifest:
                 return images
 
-            # Get the list of content files in reading order
-            content_files = [urljoin(opf_path, item['href']) for item in opf_soup.find_all('item', attrs={'media-type': 'application/xhtml+xml'})]
+            # Get the list of content files
+            content_files = [urljoin(opf_path, item['href']) for item in manifest.find_all('item', attrs={'media-type': 'application/xhtml+xml'})]
 
         for file_name in content_files:
-            if file_name.endswith(('.xhtml', '.html', '.htm')):
-                with zip_ref.open(file_name) as file:
-                    soup = BeautifulSoup(file, 'html.parser')
-                    for img in soup.find_all('img'):
-                        src = img.get('src')
-                        alt = img.get('alt', '')
-                        # Find long description in parent figure element
-                        long_desc = ''
-                        figure = img.find_parent('figure')
-                        if figure:
-                            figcaption = figure.find('figcaption')
-                            if figcaption:
-                                long_desc = figcaption.get_text(strip=True)
-                        if src:
-                            image_path = urljoin(file_name, src)
-                            if image_path in zip_ref.namelist():
-                                with zip_ref.open(image_path) as img_file:
-                                    img_data = img_file.read()
-                                    img_base64 = base64.b64encode(img_data).decode('utf-8')
-                                    images.append({
-                                        'src': image_path,
-                                        'alt': alt,
-                                        'long_desc': long_desc,
-                                        'thumbnail': f"data:image/jpeg;base64,{img_base64}"
-                                    })
+            with zip_ref.open(file_name) as file:
+                soup = BeautifulSoup(file, 'html5lib')
+                for img in soup.find_all('img'):
+                    src = img.get('src')
+                    alt = img.get('alt', '')
+                    # Find long description in parent figure element
+                    long_desc = ''
+                    figure = img.find_parent('figure')
+                    if figure:
+                        figcaption = figure.find('figcaption')
+                        if figcaption:
+                            long_desc = figcaption.get_text(strip=True)
+                    if src:
+                        image_path = urljoin(file_name, src)
+                        if image_path in zip_ref.namelist():
+                            with zip_ref.open(image_path) as img_file:
+                                img_data = img_file.read()
+                                img_base64 = base64.b64encode(img_data).decode('utf-8')
+                                images.append({
+                                    'src': image_path,
+                                    'alt': alt,
+                                    'long_desc': long_desc,
+                                    'thumbnail': f"data:image/jpeg;base64,{img_base64}"
+                                })
     return images
 
 def update_epub_descriptions(epub_path, new_descriptions):
@@ -67,7 +66,7 @@ def update_epub_descriptions(epub_path, new_descriptions):
                 with zip_ref.open(item.filename) as file:
                     if item.filename.endswith(('.xhtml', '.html', '.htm')):
                         content = file.read().decode('utf-8')
-                        soup = BeautifulSoup(file, 'html5lib')
+                        soup = BeautifulSoup(content, 'html5lib')
                         for img in soup.find_all('img'):
                             src = urljoin(item.filename, img.get('src'))
                             if src in new_descriptions:
