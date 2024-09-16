@@ -1,6 +1,6 @@
 import os
 import tempfile
-from flask import Flask, request, render_template, send_file
+from flask import Flask, request, render_template, send_file, jsonify
 from werkzeug.utils import secure_filename
 import zipfile
 from bs4 import BeautifulSoup
@@ -10,6 +10,8 @@ from urllib.parse import urljoin
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = tempfile.gettempdir()  # Use the system's temporary directory
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max-limit
+
+APP_TITLE = "desLibris Alt-text Editor"
 
 def extract_images_and_descriptions(epub_path):
     images = []
@@ -94,17 +96,19 @@ def update_epub_descriptions(epub_path, new_descriptions):
 def upload_file():
     if request.method == 'POST':
         if 'file' not in request.files:
-            return 'No file part'
+            return jsonify({'error': 'No file part'}), 400
         file = request.files['file']
         if file.filename == '':
-            return 'No selected file'
+            return jsonify({'error': 'No selected file'}), 400
         if file and file.filename.endswith('.epub'):
             filename = secure_filename(file.filename)
             file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             file.save(file_path)
             images = extract_images_and_descriptions(file_path)
-            return render_template('edit.html', images=images, filename=filename)
-    return render_template('upload.html')
+            return render_template('edit.html', images=images, filename=filename, app_title=APP_TITLE)
+        else:
+            return jsonify({'error': 'Invalid file type. Please upload an ePUB file.'}), 400
+    return render_template('upload.html', app_title=APP_TITLE)
 
 @app.route('/update', methods=['POST'])
 def update_descriptions():
