@@ -21,7 +21,7 @@ def extract_images_and_descriptions(epub_path):
 
         # Parse the OPF file to get the spine
         with zip_ref.open(opf_path) as opf_file:
-            opf_soup = BeautifulSoup(opf_file, 'lxml-xml')
+            opf_soup = BeautifulSoup(opf_file, 'html5lib')
             manifest = opf_soup.find('manifest')
             if not manifest:
                 return images
