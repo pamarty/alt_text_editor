@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Image Descriptions</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
+        h1 { color: #333; }
+        .image-container { display: flex; margin-bottom: 20px; align-items: start; }
+        .image-container img { max-width: 100px; max-height: 100px; margin-right: 20px; }
+        .image-container .descriptions { flex-grow: 1; }
+        .image-container input, .image-container textarea { width: 100%; margin-bottom: 10px; }
+        .image-container textarea { height: 100px; }
+    </style>
+</head>
+<body>
+    <h1>Edit Image Descriptions</h1>
+    <form method="post" action="/update">
+        <input type="hidden" name="filename" value="{{ filename }}">
+        {% for image in images %}
+        <div class="image-container">
+            <img src="{{ image.thumbnail }}" alt="{{ image.alt }}">
+            <div class="descriptions">
+                <label for="alt_{{ image.src }}">Alt Text:</label>
+                <input type="text" id="alt_{{ image.src }}" name="alt_{{ image.src }}" value="{{ image.alt }}">
+                <label for="long_desc_{{ image.src }}">Long Description:</label>
+                <textarea id="long_desc_{{ image.src }}" name="long_desc_{{ image.src }}">{{ image.long_desc }}</textarea>
+            </div>
+        </div>
+        {% endfor %}
+        <input type="submit" value="Update and Download">
+    </form>
+</body>
+</html>
