@@ -5,6 +5,7 @@ from werkzeug.utils import secure_filename
 import zipfile
 from bs4 import BeautifulSoup
 import base64
+from urllib.parse import urljoin
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = tempfile.gettempdir()  # Use the system's temporary directory
@@ -13,7 +14,22 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max-limit
 def extract_images_and_descriptions(epub_path):
     images = []
     with zipfile.ZipFile(epub_path, 'r') as zip_ref:
-        for file_name in zip_ref.namelist():
+        # Find the OPF file
+        opf_path = next((f for f in zip_ref.namelist() if f.endswith('.opf')), None)
+        if not opf_path:
+            return images
+
+        # Parse the OPF file to get the spine
+        with zip_ref.open(opf_path) as opf_file:
+            opf_soup = BeautifulSoup(opf_file, 'xml')
+            spine = opf_soup.find('spine')
+            if not spine:
+                return images
+
+            # Get the list of content files in reading order
+            content_files = [urljoin(opf_path, item['href']) for item in opf_soup.find_all('item', attrs={'media-type': 'application/xhtml+xml'})]
+
+        for file_name in content_files:
             if file_name.endswith(('.xhtml', '.html', '.htm')):
                 with zip_ref.open(file_name) as file:
                     soup = BeautifulSoup(file, 'html.parser')
@@ -28,13 +44,13 @@ def extract_images_and_descriptions(epub_path):
                             if figcaption:
                                 long_desc = figcaption.get_text(strip=True)
                         if src:
-                            image_path = os.path.join(os.path.dirname(file_name), src)
+                            image_path = urljoin(file_name, src)
                             if image_path in zip_ref.namelist():
                                 with zip_ref.open(image_path) as img_file:
                                     img_data = img_file.read()
                                     img_base64 = base64.b64encode(img_data).decode('utf-8')
                                     images.append({
-                                        'src': src,
+                                        'src': image_path,
                                         'alt': alt,
                                         'long_desc': long_desc,
                                         'thumbnail': f"data:image/jpeg;base64,{img_base64}"
@@ -53,7 +69,7 @@ def update_epub_descriptions(epub_path, new_descriptions):
                         content = file.read().decode('utf-8')
                         soup = BeautifulSoup(content, 'html.parser')
                         for img in soup.find_all('img'):
-                            src = img.get('src')
+                            src = urljoin(item.filename, img.get('src'))
                             if src in new_descriptions:
                                 img['alt'] = new_descriptions[src]['alt']
                                 figure = img.find_parent('figure')
