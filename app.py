@@ -67,7 +67,7 @@ def update_epub_descriptions(epub_path, new_descriptions):
                 with zip_ref.open(item.filename) as file:
                     if item.filename.endswith(('.xhtml', '.html', '.htm')):
                         content = file.read().decode('utf-8')
-                        soup = BeautifulSoup(content, 'html.parser')
+                        soup = BeautifulSoup(file, 'html5lib')
                         for img in soup.find_all('img'):
                             src = urljoin(item.filename, img.get('src'))
                             if src in new_descriptions:
