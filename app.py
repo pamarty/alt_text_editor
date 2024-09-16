@@ -14,19 +14,16 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max-limit
 def extract_images_and_descriptions(epub_path):
     images = []
     with zipfile.ZipFile(epub_path, 'r') as zip_ref:
-        # Find the OPF file
         opf_path = next((f for f in zip_ref.namelist() if f.endswith('.opf')), None)
         if not opf_path:
             return images
 
-        # Parse the OPF file to get the spine
         with zip_ref.open(opf_path) as opf_file:
             opf_soup = BeautifulSoup(opf_file, 'html5lib')
             manifest = opf_soup.find('manifest')
             if not manifest:
                 return images
 
-            # Get the list of content files
             content_files = [urljoin(opf_path, item['href']) for item in manifest.find_all('item', attrs={'media-type': 'application/xhtml+xml'})]
 
         for file_name in content_files:
@@ -35,13 +32,15 @@ def extract_images_and_descriptions(epub_path):
                 for img in soup.find_all('img'):
                     src = img.get('src')
                     alt = img.get('alt', '')
-                    # Find long description in parent figure element
                     long_desc = ''
-                    figure = img.find_parent('figure')
-                    if figure:
-                        figcaption = figure.find('figcaption')
-                        if figcaption:
-                            long_desc = figcaption.get_text(strip=True)
+                    
+                    # Find long description in the associated div
+                    long_desc_id = img.get('aria-describedby')
+                    if long_desc_id:
+                        long_desc_div = soup.find('div', id=long_desc_id)
+                        if long_desc_div:
+                            long_desc = long_desc_div.get_text(strip=True)
+                    
                     if src:
                         image_path = urljoin(file_name, src)
                         if image_path in zip_ref.namelist():
@@ -71,20 +70,21 @@ def update_epub_descriptions(epub_path, new_descriptions):
                             src = urljoin(item.filename, img.get('src'))
                             if src in new_descriptions:
                                 img['alt'] = new_descriptions[src]['alt']
-                                figure = img.find_parent('figure')
-                                if figure:
-                                    figcaption = figure.find('figcaption')
-                                    if figcaption:
-                                        figcaption.string = new_descriptions[src]['long_desc']
-                                    else:
-                                        figure.append(soup.new_tag('figcaption'))
-                                        figure.figcaption.string = new_descriptions[src]['long_desc']
-                                else:
-                                    new_figure = soup.new_tag('figure')
-                                    img.wrap(new_figure)
-                                    new_figcaption = soup.new_tag('figcaption')
-                                    new_figcaption.string = new_descriptions[src]['long_desc']
-                                    new_figure.append(new_figcaption)
+                                
+                                # Create a unique ID for the long description
+                                long_desc_id = f"long-desc-{hash(src)}"
+                                
+                                # Set aria-describedby attribute on the image
+                                img['aria-describedby'] = long_desc_id
+                                
+                                # Create or update the long description div
+                                long_desc_div = soup.find('div', id=long_desc_id)
+                                if not long_desc_div:
+                                    long_desc_div = soup.new_tag('div', id=long_desc_id)
+                                    long_desc_div['class'] = 'long-description'
+                                    img.insert_after(long_desc_div)
+                                long_desc_div.string = new_descriptions[src]['long_desc']
+                                
                         new_zip.writestr(item.filename, str(soup))
                     else:
                         new_zip.writestr(item.filename, file.read())
