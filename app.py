@@ -6,6 +6,7 @@ import zipfile
 from bs4 import BeautifulSoup
 import base64
 from urllib.parse import urljoin
+import re
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = tempfile.gettempdir()  # Use the system's temporary directory
@@ -36,12 +37,16 @@ def extract_images_and_descriptions(epub_path):
                     alt = img.get('alt', '')
                     long_desc = ''
                     
-                    # Find long description in the associated div
-                    long_desc_id = img.get('aria-describedby')
-                    if long_desc_id:
-                        long_desc_div = soup.find('div', id=long_desc_id)
-                        if long_desc_div:
-                            long_desc = long_desc_div.get_text(strip=True)
+                    # Find long description in the associated details tag
+                    details_id = img.get('aria-details')
+                    if details_id:
+                        details_tag = soup.find('details', id=details_id)
+                        if details_tag:
+                            # Extract content without the summary
+                            summary = details_tag.find('summary')
+                            if summary:
+                                summary.extract()
+                            long_desc = details_tag.get_text(strip=True)
                     
                     if src:
                         image_path = urljoin(file_name, src)
@@ -74,18 +79,28 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                 img['alt'] = new_descriptions[src]['alt']
                                 
                                 # Create a unique ID for the long description
-                                long_desc_id = f"long-desc-{hash(src)}"
+                                details_id = f"desc-{hash(src)}"
                                 
-                                # Set aria-describedby attribute on the image
-                                img['aria-describedby'] = long_desc_id
+                                # Set aria-details attribute on the image
+                                img['aria-details'] = details_id
                                 
-                                # Create or update the long description div
-                                long_desc_div = soup.find('div', id=long_desc_id)
-                                if not long_desc_div:
-                                    long_desc_div = soup.new_tag('div', id=long_desc_id)
-                                    long_desc_div['class'] = 'long-description'
-                                    img.insert_after(long_desc_div)
-                                long_desc_div.string = new_descriptions[src]['long_desc']
+                                # Create or update the details tag
+                                details_tag = soup.find('details', id=details_id)
+                                if not details_tag:
+                                    details_tag = soup.new_tag('details', id=details_id)
+                                    summary_tag = soup.new_tag('summary')
+                                    summary_tag.string = 'Description'
+                                    details_tag.append(summary_tag)
+                                    p_tag = soup.new_tag('p')
+                                    details_tag.append(p_tag)
+                                    img.insert_after(details_tag)
+                                else:
+                                    p_tag = details_tag.find('p')
+                                    if not p_tag:
+                                        p_tag = soup.new_tag('p')
+                                        details_tag.append(p_tag)
+                                
+                                p_tag.string = new_descriptions[src]['long_desc']
                                 
                         new_zip.writestr(item.filename, str(soup))
                     else:
@@ -106,8 +121,6 @@ def upload_file():
             file.save(file_path)
             images = extract_images_and_descriptions(file_path)
             return render_template('edit.html', images=images, filename=filename, app_title=APP_TITLE)
-        else:
-            return jsonify({'error': 'Invalid file type. Please upload an ePUB file.'}), 400
     return render_template('upload.html', app_title=APP_TITLE)
 
 @app.route('/update', methods=['POST'])
