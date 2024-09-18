@@ -22,7 +22,7 @@ def extract_images_and_descriptions(epub_path):
             return images
 
         with zip_ref.open(opf_path) as opf_file:
-            opf_soup = BeautifulSoup(opf_file, 'xml')
+            opf_soup = BeautifulSoup(opf_file, 'html5lib')
             manifest = opf_soup.find('manifest')
             if not manifest:
                 return images
@@ -31,7 +31,7 @@ def extract_images_and_descriptions(epub_path):
 
         for file_name in content_files:
             with zip_ref.open(file_name) as file:
-                soup = BeautifulSoup(file, 'xml')
+                soup = BeautifulSoup(file, 'html5lib')
                 for figure in soup.find_all('figure'):
                     img = figure.find('img')
                     if img:
@@ -84,7 +84,7 @@ def update_epub_descriptions(epub_path, new_descriptions):
                         content = re.sub(r'(<!DOCTYPE[^>]+>)', '', content)
                         content = re.sub(r'(<!--\?xml[^>]+\?>-->', '', content)
                         
-                        soup = BeautifulSoup(content, 'xml')
+                        soup = BeautifulSoup(content, 'html5lib')
                         for figure in soup.find_all('figure'):
                             img = figure.find('img')
                             if img:
