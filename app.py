@@ -14,6 +14,12 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max-limit
 
 APP_TITLE = "desLibris Alt-text Editor"
 
+def generate_valid_id(src):
+    # Remove non-alphanumeric characters and replace spaces with hyphens
+    base_id = re.sub(r'[^\w\-]', '', src.replace(' ', '-'))
+    # Ensure the ID starts with a letter (ARIA requirement)
+    return f"desc-{base_id}"
+
 def extract_images_and_descriptions(epub_path):
     images = []
     with zipfile.ZipFile(epub_path, 'r') as zip_ref:
@@ -92,7 +98,7 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                 if src in new_descriptions:
                                     img['alt'] = new_descriptions[src]['alt']
                                     
-                                    details_id = f"desc-{hash(src)}"
+                                    details_id = generate_valid_id(src)
                                     existing_details = soup.find('details', id=img.get('aria-details'))
                                     
                                     if 'long_desc' in new_descriptions[src]:
@@ -108,6 +114,7 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                                 details_tag.append(p_tag)
                                             else:
                                                 details_tag = existing_details
+                                                details_tag['id'] = details_id  # Update the ID of existing details
                                                 p_tag = details_tag.find('p') or soup.new_tag('p')
                                                 details_tag.clear()
                                                 details_tag.append(soup.new_tag('summary', string='Description'))
