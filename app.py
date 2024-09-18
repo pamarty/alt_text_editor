@@ -22,7 +22,7 @@ def extract_images_and_descriptions(epub_path):
             return images
 
         with zip_ref.open(opf_path) as opf_file:
-            opf_soup = BeautifulSoup(opf_file, 'html5lib')
+            opf_soup = BeautifulSoup(opf_file, 'xml')
             manifest = opf_soup.find('manifest')
             if not manifest:
                 return images
@@ -31,7 +31,7 @@ def extract_images_and_descriptions(epub_path):
 
         for file_name in content_files:
             with zip_ref.open(file_name) as file:
-                soup = BeautifulSoup(file, 'html5lib')
+                soup = BeautifulSoup(file, 'xml')
                 for figure in soup.find_all('figure'):
                     img = figure.find('img')
                     if img:
@@ -39,12 +39,10 @@ def extract_images_and_descriptions(epub_path):
                         alt = img.get('alt', '')
                         long_desc = ''
                         
-                        # Find long description in the associated details tag
                         details_id = img.get('aria-details')
                         if details_id:
                             details_tag = soup.find('details', id=details_id)
                             if details_tag:
-                                # Extract content without the summary
                                 summary = details_tag.find('summary')
                                 if summary:
                                     summary.extract()
@@ -78,10 +76,15 @@ def update_epub_descriptions(epub_path, new_descriptions):
                         # Extract XML declaration and DOCTYPE
                         xml_decl_match = re.match(r'(<\?xml[^>]+\?>)', content)
                         doctype_match = re.search(r'(<!DOCTYPE[^>]+>)', content)
-                        xml_decl = xml_decl_match.group(1) if xml_decl_match else ''
-                        doctype = doctype_match.group(1) if doctype_match else ''
+                        xml_decl = xml_decl_match.group(1) if xml_decl_match else '<?xml version="1.0" encoding="UTF-8"?>'
+                        doctype = doctype_match.group(1) if doctype_match else '<!DOCTYPE html>'
                         
-                        soup = BeautifulSoup(content, 'html5lib')
+                        # Remove XML declaration, DOCTYPE, and any commented XML declarations
+                        content = re.sub(r'(<\?xml[^>]+\?>)', '', content)
+                        content = re.sub(r'(<!DOCTYPE[^>]+>)', '', content)
+                        content = re.sub(r'(<!--\?xml[^>]+\?>-->', '', content)
+                        
+                        soup = BeautifulSoup(content, 'xml')
                         for figure in soup.find_all('figure'):
                             img = figure.find('img')
                             if img:
@@ -89,16 +92,13 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                 if src in new_descriptions:
                                     img['alt'] = new_descriptions[src]['alt']
                                     
-                                    # Handle long description
                                     details_id = f"desc-{hash(src)}"
                                     existing_details = soup.find('details', id=img.get('aria-details'))
                                     
-                                    # Check if the long description was edited
                                     if 'long_desc' in new_descriptions[src]:
                                         new_long_desc = new_descriptions[src]['long_desc']
                                         
                                         if new_long_desc:
-                                            # Create or update the details tag
                                             if not existing_details:
                                                 details_tag = soup.new_tag('details', id=details_id)
                                                 summary_tag = soup.new_tag('summary')
@@ -116,18 +116,15 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                             p_tag.string = new_long_desc
                                             img['aria-details'] = details_id
                                             
-                                            # Ensure the details tag is after the figure
                                             if existing_details:
                                                 existing_details.extract()
                                             figure.insert_after(details_tag)
                                         elif existing_details:
-                                            # Remove existing details tag if the new long description is empty
                                             existing_details.decompose()
                                             img.pop('aria-details', None)
-                                    # If long_desc is not in new_descriptions[src], it wasn't edited, so do nothing
                         
-                        # Reconstruct the content with original XML declaration and DOCTYPE
-                        new_content = f"{xml_decl}\n{doctype}\n{soup.prettify()}"
+                        # Reconstruct the content with correct XML declaration and DOCTYPE
+                        new_content = f"{xml_decl}\n{doctype}\n{soup.prettify(formatter='minimal')}"
                         new_zip.writestr(item.filename, new_content)
                     else:
                         new_zip.writestr(item.filename, file.read())
