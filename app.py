@@ -80,9 +80,9 @@ def update_epub_descriptions(epub_path, new_descriptions):
                         doctype = doctype_match.group(1) if doctype_match else '<!DOCTYPE html>'
                         
                         # Remove XML declaration, DOCTYPE, and any commented XML declarations
-                        content = re.sub(r'(<\?xml[^>]+\?>)', '', content)
-                        content = re.sub(r'(<!DOCTYPE[^>]+>)', '', content)
-                        content = re.sub(r'(<!--\?xml[^>]+\?>-->', '', content)
+                        content = re.sub(r'<\?xml[^>]+\?>', '', content)
+                        content = re.sub(r'<!DOCTYPE[^>]+>', '', content)
+                        content = re.sub(r'<!--\?xml[^>]+\?-->', '', content)
                         
                         soup = BeautifulSoup(content, 'html5lib')
                         for figure in soup.find_all('figure'):
