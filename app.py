@@ -39,10 +39,12 @@ def extract_images_and_descriptions(epub_path):
                         alt = img.get('alt', '')
                         long_desc = ''
                         
+                        # Find long description in the associated details tag
                         details_id = img.get('aria-details')
                         if details_id:
                             details_tag = soup.find('details', id=details_id)
                             if details_tag:
+                                # Extract content without the summary
                                 summary = details_tag.find('summary')
                                 if summary:
                                     summary.extract()
@@ -79,7 +81,6 @@ def update_epub_descriptions(epub_path, new_descriptions):
                         xml_decl = xml_decl_match.group(1) if xml_decl_match else ''
                         doctype = doctype_match.group(1) if doctype_match else ''
                         
-                        # Parse the content
                         soup = BeautifulSoup(content, 'html5lib')
                         for figure in soup.find_all('figure'):
                             img = figure.find('img')
@@ -123,6 +124,7 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                             # Remove existing details tag if the new long description is empty
                                             existing_details.decompose()
                                             img.pop('aria-details', None)
+                                    # If long_desc is not in new_descriptions[src], it wasn't edited, so do nothing
                         
                         # Reconstruct the content with original XML declaration and DOCTYPE
                         new_content = f"{xml_decl}\n{doctype}\n{soup.prettify()}"
