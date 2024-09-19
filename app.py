@@ -3,7 +3,7 @@ import tempfile
 from flask import Flask, request, render_template, send_file, jsonify
 from werkzeug.utils import secure_filename
 import zipfile
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 import base64
 from urllib.parse import urljoin
 import re
@@ -15,9 +15,7 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max-limit
 APP_TITLE = "desLibris Alt-text Editor"
 
 def generate_valid_id(src):
-    # Remove non-alphanumeric characters and replace spaces with hyphens
     base_id = re.sub(r'[^\w\-]', '', src.replace(' ', '-'))
-    # Ensure the ID starts with a letter (ARIA requirement)
     return f"desc-{base_id}"
 
 def extract_images_and_descriptions(epub_path):
@@ -28,7 +26,7 @@ def extract_images_and_descriptions(epub_path):
             return images
 
         with zip_ref.open(opf_path) as opf_file:
-            opf_soup = BeautifulSoup(opf_file, 'html5lib')
+            opf_soup = BeautifulSoup(opf_file, 'xml')
             manifest = opf_soup.find('manifest')
             if not manifest:
                 return images
@@ -37,35 +35,33 @@ def extract_images_and_descriptions(epub_path):
 
         for file_name in content_files:
             with zip_ref.open(file_name) as file:
-                soup = BeautifulSoup(file, 'html5lib')
-                for figure in soup.find_all('figure'):
-                    img = figure.find('img')
-                    if img:
-                        src = img.get('src')
-                        alt = img.get('alt', '')
-                        long_desc = ''
-                        
-                        details_id = img.get('aria-details')
-                        if details_id:
-                            details_tag = soup.find('details', id=details_id)
-                            if details_tag:
-                                summary = details_tag.find('summary')
-                                if summary:
-                                    summary.extract()
-                                long_desc = details_tag.get_text(strip=True)
-                        
-                        if src:
-                            image_path = urljoin(file_name, src)
-                            if image_path in zip_ref.namelist():
-                                with zip_ref.open(image_path) as img_file:
-                                    img_data = img_file.read()
-                                    img_base64 = base64.b64encode(img_data).decode('utf-8')
-                                    images.append({
-                                        'src': image_path,
-                                        'alt': alt,
-                                        'long_desc': long_desc,
-                                        'thumbnail': f"data:image/jpeg;base64,{img_base64}"
-                                    })
+                soup = BeautifulSoup(file, 'xml')
+                for img in soup.find_all('img'):
+                    src = img.get('src')
+                    alt = img.get('alt', '')
+                    long_desc = ''
+                    
+                    details_id = img.get('aria-details')
+                    if details_id:
+                        details_tag = soup.find('details', id=details_id)
+                        if details_tag:
+                            summary = details_tag.find('summary')
+                            if summary:
+                                summary.extract()
+                            long_desc = details_tag.get_text(strip=True)
+                    
+                    if src:
+                        image_path = urljoin(file_name, src)
+                        if image_path in zip_ref.namelist():
+                            with zip_ref.open(image_path) as img_file:
+                                img_data = img_file.read()
+                                img_base64 = base64.b64encode(img_data).decode('utf-8')
+                                images.append({
+                                    'src': image_path,
+                                    'alt': alt,
+                                    'long_desc': long_desc,
+                                    'thumbnail': f"data:image/jpeg;base64,{img_base64}"
+                                })
     return images
 
 def update_epub_descriptions(epub_path, new_descriptions):
@@ -78,60 +74,51 @@ def update_epub_descriptions(epub_path, new_descriptions):
                 with zip_ref.open(item.filename) as file:
                     if item.filename.endswith(('.xhtml', '.html', '.htm')):
                         content = file.read().decode('utf-8')
+                        soup = BeautifulSoup(content, 'html.parser')
                         
-                        # Extract XML declaration and DOCTYPE
-                        xml_decl_match = re.match(r'(<\?xml[^>]+\?>)', content)
-                        doctype_match = re.search(r'(<!DOCTYPE[^>]+>)', content)
-                        xml_decl = xml_decl_match.group(1) if xml_decl_match else '<?xml version="1.0" encoding="UTF-8"?>'
-                        doctype = doctype_match.group(1) if doctype_match else '<!DOCTYPE html>'
-                        
-                        # Remove XML declaration, DOCTYPE, and any commented XML declarations
-                        content = re.sub(r'<\?xml[^>]+\?>', '', content)
-                        content = re.sub(r'<!DOCTYPE[^>]+>', '', content)
-                        content = re.sub(r'<!--\?xml[^>]+\?-->', '', content)
-                        
-                        soup = BeautifulSoup(content, 'html5lib')
-                        for figure in soup.find_all('figure'):
-                            img = figure.find('img')
-                            if img:
-                                src = urljoin(item.filename, img.get('src'))
-                                if src in new_descriptions:
-                                    img['alt'] = new_descriptions[src]['alt']
+                        for img in soup.find_all('img'):
+                            src = urljoin(item.filename, img.get('src'))
+                            if src in new_descriptions:
+                                img['alt'] = new_descriptions[src]['alt']
+                                
+                                details_id = generate_valid_id(src)
+                                existing_details = soup.find('details', id=img.get('aria-details'))
+                                
+                                if 'long_desc' in new_descriptions[src]:
+                                    new_long_desc = new_descriptions[src]['long_desc']
                                     
-                                    details_id = generate_valid_id(src)
-                                    existing_details = soup.find('details', id=img.get('aria-details'))
-                                    
-                                    if 'long_desc' in new_descriptions[src]:
-                                        new_long_desc = new_descriptions[src]['long_desc']
+                                    if new_long_desc:
+                                        if not existing_details:
+                                            details_tag = soup.new_tag('details', id=details_id)
+                                            summary_tag = soup.new_tag('summary')
+                                            summary_tag.string = 'Description'
+                                            details_tag.append(summary_tag)
+                                            p_tag = soup.new_tag('p')
+                                            details_tag.append(p_tag)
+                                            img.insert_after(details_tag)
+                                        else:
+                                            details_tag = existing_details
+                                            details_tag['id'] = details_id
+                                            p_tag = details_tag.find('p') or soup.new_tag('p')
+                                            details_tag.clear()
+                                            details_tag.append(soup.new_tag('summary', string='Description'))
+                                            details_tag.append(p_tag)
                                         
-                                        if new_long_desc:
-                                            if not existing_details:
-                                                details_tag = soup.new_tag('details', id=details_id)
-                                                summary_tag = soup.new_tag('summary')
-                                                summary_tag.string = 'Description'
-                                                details_tag.append(summary_tag)
-                                                p_tag = soup.new_tag('p')
-                                                details_tag.append(p_tag)
-                                            else:
-                                                details_tag = existing_details
-                                                details_tag['id'] = details_id  # Update the ID of existing details
-                                                p_tag = details_tag.find('p') or soup.new_tag('p')
-                                                details_tag.clear()
-                                                details_tag.append(soup.new_tag('summary', string='Description'))
-                                                details_tag.append(p_tag)
-                                            
-                                            p_tag.string = new_long_desc
-                                            img['aria-details'] = details_id
-                                            
-                                            if existing_details:
-                                                existing_details.extract()
-                                            figure.insert_after(details_tag)
-                                        elif existing_details:
-                                            existing_details.decompose()
-                                            img.pop('aria-details', None)
+                                        p_tag.string = new_long_desc
+                                        img['aria-details'] = details_id
+                                    elif existing_details:
+                                        existing_details.decompose()
+                                        del img['aria-details']
                         
-                        # Reconstruct the content with correct XML declaration and DOCTYPE
-                        new_content = f"{xml_decl}\n{doctype}\n{soup.prettify(formatter='minimal')}"
+                        # Preserve self-closing tags and attribute order
+                        for tag in soup.find_all():
+                            if isinstance(tag, Tag) and not tag.contents:
+                                tag.string = ""
+                                tag.can_be_empty_element = True
+                        
+                        new_content = str(soup)
+                        # Remove added newlines and spaces
+                        new_content = re.sub(r'>\s+<', '><', new_content)
                         new_zip.writestr(item.filename, new_content)
                     else:
                         new_zip.writestr(item.filename, file.read())
