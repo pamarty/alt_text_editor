@@ -3,11 +3,10 @@ import tempfile
 from flask import Flask, request, render_template, send_file, jsonify
 from werkzeug.utils import secure_filename
 import zipfile
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup
 import base64
 from urllib.parse import urljoin
 import re
-import html
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = tempfile.gettempdir()
@@ -27,7 +26,7 @@ def extract_images_and_descriptions(epub_path):
             return images
 
         with zip_ref.open(opf_path) as opf_file:
-            opf_soup = BeautifulSoup(opf_file, 'html.parser')
+            opf_soup = BeautifulSoup(opf_file, 'xml')
             manifest = opf_soup.find('manifest')
             if not manifest:
                 return images
@@ -36,7 +35,8 @@ def extract_images_and_descriptions(epub_path):
 
         for file_name in content_files:
             with zip_ref.open(file_name) as file:
-                soup = BeautifulSoup(file, 'html.parser')
+                content = file.read().decode('utf-8')
+                soup = BeautifulSoup(content, 'html.parser')
                 for figure in soup.find_all('figure'):
                     img = figure.find('img')
                     if img:
@@ -78,8 +78,8 @@ def update_epub_descriptions(epub_path, new_descriptions):
                     if item.filename.endswith(('.xhtml', '.html', '.htm')):
                         content = file.read().decode('utf-8')
                         
-                        # Use a custom parser to preserve entities
-                        soup = BeautifulSoup(content, 'html.parser')
+                        # Parse the content without modifying entities
+                        soup = BeautifulSoup(content, 'html.parser', preserve_whitespace_tags=['p', 'span', 'br'])
                         
                         for figure in soup.find_all('figure'):
                             img = figure.find('img')
@@ -87,8 +87,7 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                 src = urljoin(item.filename, img.get('src', ''))
                                 if src in new_descriptions:
                                     # Update alt text
-                                    new_alt = html.escape(new_descriptions[src]['alt'])
-                                    img['alt'] = new_alt
+                                    img['alt'] = new_descriptions[src]['alt']
                                     
                                     details_id = generate_valid_id(src)
                                     existing_details = soup.find('details', id=img.get('aria-details'))
@@ -115,18 +114,13 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                             existing_details.decompose()
                                             del img['aria-details']
                         
-                        # Preserve self-closing tags
-                        for tag in soup.find_all():
-                            if isinstance(tag, Tag) and not tag.contents:
-                                tag.can_be_empty_element = True
-                        
-                        # Convert the soup back to a string while preserving entities
+                        # Convert the soup back to a string while preserving entities and structure
                         new_content = str(soup)
                         
                         # Ensure we're not adding extra newlines
                         new_content = new_content.strip()
                         
-                        new_zip.writestr(item.filename, new_content)
+                        new_zip.writestr(item.filename, new_content.encode('utf-8'))
                     else:
                         new_zip.writestr(item.filename, file.read())
     return new_epub_path
