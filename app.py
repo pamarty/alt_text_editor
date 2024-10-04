@@ -26,7 +26,7 @@ def extract_images_and_descriptions(epub_path):
             return images
 
         with zip_ref.open(opf_path) as opf_file:
-            opf_soup = BeautifulSoup(opf_file, 'html.parser')
+            opf_soup = BeautifulSoup(opf_file, 'xml')
             manifest = opf_soup.find('manifest')
             if not manifest:
                 return images
@@ -77,8 +77,8 @@ def update_epub_descriptions(epub_path, new_descriptions):
                     if item.filename.endswith(('.xhtml', '.html', '.htm')):
                         content = file.read().decode('utf-8')
                         
-                        # Parse the content without modifying entities
-                        soup = BeautifulSoup(content, 'html.parser', preserve_entities=True)
+                        # Parse the content
+                        soup = BeautifulSoup(content, 'html.parser')
                         
                         for figure in soup.find_all('figure'):
                             img = figure.find('img')
@@ -125,8 +125,8 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                 tag.string = None
                                 tag.can_be_empty_element = True
                         
-                        # Convert the soup back to a string while preserving entities
-                        new_content = soup.encode(formatter='html5').decode()
+                        # Convert the soup back to a string
+                        new_content = str(soup)
                         
                         # Ensure we're not adding extra newlines
                         new_content = new_content.strip()
