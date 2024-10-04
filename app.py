@@ -74,7 +74,17 @@ def update_epub_descriptions(epub_path, new_descriptions):
                     if item.filename.endswith(('.xhtml', '.html', '.htm')):
                         content = file.read().decode('utf-8')
                         
-                        # Use regex to find and update img tags
+                        # Preserve DOCTYPE and XML declaration
+                        doctype_match = re.match(r'(<!DOCTYPE[^>]+>)', content)
+                        xml_decl_match = re.match(r'(<\?xml[^>]+\?>)', content)
+                        doctype = doctype_match.group(1) if doctype_match else ''
+                        xml_decl = xml_decl_match.group(1) if xml_decl_match else ''
+                        
+                        # Extract namespace attributes from the html tag
+                        html_tag_match = re.search(r'<html([^>]*)>', content)
+                        namespace_attrs = html_tag_match.group(1) if html_tag_match else ''
+                        
+                        # Update img tags
                         def update_img(match):
                             img_tag = match.group(0)
                             src = re.search(r'src="([^"]+)"', img_tag)
@@ -103,8 +113,8 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                     if img_tag:
                                         content = content.replace(img_tag.group(0), img_tag.group(0) + details_tag)
                         
-                        # Ensure self-closing tags remain self-closing
-                        content = re.sub(r'<([^/>\s]+)([^>]*)>\s*</\1>', r'<\1\2 />', content)
+                        # Reconstruct the document with preserved structure
+                        content = f"{xml_decl}\n{doctype}\n<html{namespace_attrs}>\n{content.split('<html', 1)[1]}"
                         
                         new_zip.writestr(item.filename, content.encode('utf-8'))
                     else:
