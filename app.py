@@ -6,6 +6,7 @@ import zipfile
 import re
 from urllib.parse import urljoin
 import base64
+import xml.etree.ElementTree as ET
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = tempfile.gettempdir()
@@ -73,7 +74,8 @@ def update_epub_descriptions(epub_path, new_descriptions):
                     if item.filename.endswith(('.xhtml', '.html', '.htm')):
                         content = file.read().decode('utf-8')
                         
-                        def replace_img(match):
+                        # Use regex to find and update img tags
+                        def update_img(match):
                             img_tag = match.group(0)
                             src = re.search(r'src="([^"]+)"', img_tag)
                             if src:
@@ -86,8 +88,9 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                         img_tag = img_tag[:-1] + f' aria-details="{details_id}">'
                             return img_tag
 
-                        content = re.sub(r'<img[^>]+>', replace_img, content)
+                        content = re.sub(r'<img[^>]+>', update_img, content)
                         
+                        # Update or add details tags
                         for src, desc in new_descriptions.items():
                             if 'long_desc' in desc:
                                 details_id = generate_valid_id(src)
@@ -99,6 +102,9 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                     img_tag = re.search(rf'<img[^>]*src="[^"]*{re.escape(os.path.basename(src))}"[^>]*>', content)
                                     if img_tag:
                                         content = content.replace(img_tag.group(0), img_tag.group(0) + details_tag)
+                        
+                        # Ensure self-closing tags remain self-closing
+                        content = re.sub(r'<([^/>\s]+)([^>]*)>\s*</\1>', r'<\1\2 />', content)
                         
                         new_zip.writestr(item.filename, content.encode('utf-8'))
                     else:
