@@ -30,7 +30,7 @@ def extract_images_and_descriptions(epub_path):
 
         with zip_ref.open(opf_path) as opf_file:
             opf_content = opf_file.read()
-            encoding = chardet.detect(opf_content)['encoding']
+            encoding = chardet.detect(opf_content)['encoding'] or 'utf-8'
             opf_content = opf_content.decode(encoding)
             content_files = re.findall(r'href="([^"]+\.x?html?)"', opf_content)
             content_files = [urljoin(opf_path, f) for f in content_files]
@@ -38,7 +38,7 @@ def extract_images_and_descriptions(epub_path):
         for file_name in content_files:
             with zip_ref.open(file_name) as file:
                 content = file.read()
-                encoding = chardet.detect(content)['encoding']
+                encoding = chardet.detect(content)['encoding'] or 'utf-8'
                 content = content.decode(encoding)
                 img_tags = re.findall(r'<img[^>]+>', content)
                 for img_tag in img_tags:
@@ -80,8 +80,8 @@ def update_epub_descriptions(epub_path, new_descriptions):
                 with zip_ref.open(item.filename) as file:
                     content = file.read()
                     if item.filename.endswith(('.xhtml', '.html', '.htm')):
-                        encoding = chardet.detect(content)['encoding']
-                        content = content.decode(encoding)
+                        encoding = chardet.detect(content)['encoding'] or 'utf-8'
+                        content_str = content.decode(encoding)
                         
                         # Update img tags
                         def update_img(match):
@@ -97,22 +97,22 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                         img_tag = img_tag[:-1] + f' aria-details="{details_id}">'
                             return img_tag
 
-                        content = re.sub(r'<img[^>]+>', update_img, content)
+                        content_str = re.sub(r'<img[^>]+>', update_img, content_str)
                         
                         # Update or add details tags
                         for src, desc in new_descriptions.items():
                             if 'long_desc' in desc:
                                 details_id = generate_valid_id(src)
                                 details_tag = f'<details id="{details_id}"><summary>Description</summary><p>{desc["long_desc"]}</p></details>'
-                                existing_details = re.search(rf'<details[^>]*id="{details_id}".*?</details>', content, re.DOTALL)
+                                existing_details = re.search(rf'<details[^>]*id="{details_id}".*?</details>', content_str, re.DOTALL)
                                 if existing_details:
-                                    content = content.replace(existing_details.group(0), details_tag)
+                                    content_str = content_str.replace(existing_details.group(0), details_tag)
                                 else:
-                                    img_tag = re.search(rf'<img[^>]*src="[^"]*{re.escape(os.path.basename(src))}"[^>]*>', content)
+                                    img_tag = re.search(rf'<img[^>]*src="[^"]*{re.escape(os.path.basename(src))}"[^>]*>', content_str)
                                     if img_tag:
-                                        content = content.replace(img_tag.group(0), img_tag.group(0) + details_tag)
+                                        content_str = content_str.replace(img_tag.group(0), img_tag.group(0) + details_tag)
                         
-                        content = content.encode(encoding)
+                        content = content_str.encode(encoding)
                     
                     new_zip.writestr(item.filename, content)
     return new_epub_path
