@@ -26,7 +26,7 @@ def extract_images_and_descriptions(epub_path):
             return images
 
         with zip_ref.open(opf_path) as opf_file:
-            opf_soup = BeautifulSoup(opf_file, 'xml')
+            opf_soup = BeautifulSoup(opf_file, 'html.parser')
             manifest = opf_soup.find('manifest')
             if not manifest:
                 return images
