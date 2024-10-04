@@ -105,7 +105,40 @@ def update_epub_descriptions(epub_path, new_descriptions):
                         new_zip.writestr(item.filename, file.read())
     return new_epub_path
 
-# ... [The rest of the Flask routes remain the same] ...
+@app.route('/', methods=['GET', 'POST'])
+def upload_file():
+    if request.method == 'POST':
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file part'}), 400
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'No selected file'}), 400
+        if file and file.filename.endswith('.epub'):
+            filename = secure_filename(file.filename)
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(file_path)
+            images = extract_images_and_descriptions(file_path)
+            return render_template('edit.html', images=images, filename=filename, app_title=APP_TITLE)
+    return render_template('upload.html', app_title=APP_TITLE)
+
+@app.route('/update', methods=['POST'])
+def update_descriptions():
+    filename = request.form['filename']
+    new_descriptions = {}
+    for key, value in request.form.items():
+        if key.startswith('alt_'):
+            src = key[4:]
+            if src not in new_descriptions:
+                new_descriptions[src] = {}
+            new_descriptions[src]['alt'] = value
+        elif key.startswith('long_desc_'):
+            src = key[10:]
+            if src not in new_descriptions:
+                new_descriptions[src] = {}
+            new_descriptions[src]['long_desc'] = value
+    epub_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    updated_epub_path = update_epub_descriptions(epub_path, new_descriptions)
+    return send_file(updated_epub_path, as_attachment=True, download_name=f"updated_{filename}")
 
 if __name__ == '__main__':
     app.run(debug=True)
