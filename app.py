@@ -83,10 +83,9 @@ def update_epub_descriptions(epub_path, new_descriptions):
                         xml_decl = xml_decl_match.group(1) if xml_decl_match else '<?xml version="1.0" encoding="UTF-8"?>'
                         doctype = doctype_match.group(1) if doctype_match else '<!DOCTYPE html>'
                         
-                        # Remove XML declaration, DOCTYPE, and any commented XML declarations
+                        # Remove XML declaration and DOCTYPE for parsing
                         content = re.sub(r'<\?xml[^>]+\?>', '', content)
                         content = re.sub(r'<!DOCTYPE[^>]+>', '', content)
-                        content = re.sub(r'<!--\?xml[^>]+\?-->', '', content)
                         
                         soup = BeautifulSoup(content, 'html.parser')
                         for figure in soup.find_all('figure'):
@@ -128,14 +127,18 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                             existing_details.decompose()
                                             del img['aria-details']
                         
-                        # Preserve self-closing tags and attribute order
+                        # Preserve self-closing tags
                         for tag in soup.find_all():
                             if isinstance(tag, Tag) and not tag.contents:
-                                tag.string = ""
+                                tag.string = None
                                 tag.can_be_empty_element = True
                         
+                        # Convert soup back to string while preserving original structure
+                        new_content = str(soup)
+                        # Remove extra newlines added by BeautifulSoup
+                        new_content = re.sub(r'\n+', '\n', new_content)
                         # Reconstruct the content with correct XML declaration and DOCTYPE
-                        new_content = f"{xml_decl}\n{doctype}\n{soup.prettify(formatter='minimal')}"
+                        new_content = f"{xml_decl}\n{doctype}\n{new_content}"
                         new_zip.writestr(item.filename, new_content)
                     else:
                         new_zip.writestr(item.filename, file.read())
