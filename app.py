@@ -6,12 +6,16 @@ import zipfile
 import re
 from urllib.parse import urljoin
 import base64
+import logging
+import chardet
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = tempfile.gettempdir()
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max-limit
 
 APP_TITLE = "desLibris Alt-text Editor"
+
+logging.basicConfig(level=logging.DEBUG)
 
 def generate_valid_id(src):
     base_id = re.sub(r'[^\w\-]', '', src.replace(' ', '-'))
@@ -25,13 +29,17 @@ def extract_images_and_descriptions(epub_path):
             return images
 
         with zip_ref.open(opf_path) as opf_file:
-            opf_content = opf_file.read().decode('utf-8')
+            opf_content = opf_file.read()
+            encoding = chardet.detect(opf_content)['encoding']
+            opf_content = opf_content.decode(encoding)
             content_files = re.findall(r'href="([^"]+\.x?html?)"', opf_content)
             content_files = [urljoin(opf_path, f) for f in content_files]
 
         for file_name in content_files:
             with zip_ref.open(file_name) as file:
-                content = file.read().decode('utf-8')
+                content = file.read()
+                encoding = chardet.detect(content)['encoding']
+                content = content.decode(encoding)
                 img_tags = re.findall(r'<img[^>]+>', content)
                 for img_tag in img_tags:
                     src = re.search(r'src="([^"]+)"', img_tag)
@@ -70,8 +78,11 @@ def update_epub_descriptions(epub_path, new_descriptions):
         with zipfile.ZipFile(new_epub_path, 'w') as new_zip:
             for item in zip_ref.infolist():
                 with zip_ref.open(item.filename) as file:
-                    content = file.read().decode('utf-8')
+                    content = file.read()
                     if item.filename.endswith(('.xhtml', '.html', '.htm')):
+                        encoding = chardet.detect(content)['encoding']
+                        content = content.decode(encoding)
+                        
                         # Update img tags
                         def update_img(match):
                             img_tag = match.group(0)
@@ -100,8 +111,10 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                     img_tag = re.search(rf'<img[^>]*src="[^"]*{re.escape(os.path.basename(src))}"[^>]*>', content)
                                     if img_tag:
                                         content = content.replace(img_tag.group(0), img_tag.group(0) + details_tag)
+                        
+                        content = content.encode(encoding)
                     
-                    new_zip.writestr(item.filename, content.encode('utf-8'))
+                    new_zip.writestr(item.filename, content)
     return new_epub_path
 
 @app.route('/', methods=['GET', 'POST'])
@@ -122,22 +135,26 @@ def upload_file():
 
 @app.route('/update', methods=['POST'])
 def update_descriptions():
-    filename = request.form['filename']
-    new_descriptions = {}
-    for key, value in request.form.items():
-        if key.startswith('alt_'):
-            src = key[4:]
-            if src not in new_descriptions:
-                new_descriptions[src] = {}
-            new_descriptions[src]['alt'] = value
-        elif key.startswith('long_desc_'):
-            src = key[10:]
-            if src not in new_descriptions:
-                new_descriptions[src] = {}
-            new_descriptions[src]['long_desc'] = value
-    epub_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    updated_epub_path = update_epub_descriptions(epub_path, new_descriptions)
-    return send_file(updated_epub_path, as_attachment=True, download_name=f"updated_{filename}")
+    try:
+        filename = request.form['filename']
+        new_descriptions = {}
+        for key, value in request.form.items():
+            if key.startswith('alt_'):
+                src = key[4:]
+                if src not in new_descriptions:
+                    new_descriptions[src] = {}
+                new_descriptions[src]['alt'] = value
+            elif key.startswith('long_desc_'):
+                src = key[10:]
+                if src not in new_descriptions:
+                    new_descriptions[src] = {}
+                new_descriptions[src]['long_desc'] = value
+        epub_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        updated_epub_path = update_epub_descriptions(epub_path, new_descriptions)
+        return send_file(updated_epub_path, as_attachment=True, download_name=f"updated_{filename}")
+    except Exception as e:
+        app.logger.error(f"Error updating EPUB: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
