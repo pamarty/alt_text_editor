@@ -77,18 +77,9 @@ def update_epub_descriptions(epub_path, new_descriptions):
                     if item.filename.endswith(('.xhtml', '.html', '.htm')):
                         content = file.read().decode('utf-8')
                         
-                        # Extract XML declaration and DOCTYPE
-                        xml_decl_match = re.match(r'(<\?xml[^>]+\?>)', content)
-                        doctype_match = re.search(r'(<!DOCTYPE[^>]+>)', content)
-                        xml_decl = xml_decl_match.group(1) if xml_decl_match else '<?xml version="1.0" encoding="UTF-8"?>'
-                        doctype = doctype_match.group(1) if doctype_match else '<!DOCTYPE html>'
+                        # Parse the content without modifying entities
+                        soup = BeautifulSoup(content, 'html.parser', preserve_entities=True)
                         
-                        # Remove XML declaration, DOCTYPE, and any commented XML declarations
-                        content = re.sub(r'<\?xml[^>]+\?>', '', content)
-                        content = re.sub(r'<!DOCTYPE[^>]+>', '', content)
-                        content = re.sub(r'<!--\?xml[^>]+\?-->', '', content)
-                        
-                        soup = BeautifulSoup(content, 'html.parser')
                         for figure in soup.find_all('figure'):
                             img = figure.find('img')
                             if img:
@@ -128,14 +119,18 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                             existing_details.decompose()
                                             del img['aria-details']
                         
-                        # Preserve self-closing tags and attribute order
+                        # Preserve self-closing tags
                         for tag in soup.find_all():
                             if isinstance(tag, Tag) and not tag.contents:
-                                tag.string = ""
+                                tag.string = None
                                 tag.can_be_empty_element = True
                         
-                        # Reconstruct the content with correct XML declaration and DOCTYPE
-                        new_content = f"{xml_decl}\n{doctype}\n{str(soup)}"
+                        # Convert the soup back to a string while preserving entities
+                        new_content = soup.encode(formatter='html5').decode()
+                        
+                        # Ensure we're not adding extra newlines
+                        new_content = new_content.strip()
+                        
                         new_zip.writestr(item.filename, new_content)
                     else:
                         new_zip.writestr(item.filename, file.read())
