@@ -77,22 +77,13 @@ def update_epub_descriptions(epub_path, new_descriptions):
                     if item.filename.endswith(('.xhtml', '.html', '.htm')):
                         content = file.read().decode('utf-8')
                         
-                        # Extract XML declaration and DOCTYPE
-                        xml_decl_match = re.match(r'(<\?xml[^>]+\?>)', content)
-                        doctype_match = re.search(r'(<!DOCTYPE[^>]+>)', content)
-                        xml_decl = xml_decl_match.group(1) if xml_decl_match else '<?xml version="1.0" encoding="UTF-8"?>'
-                        doctype = doctype_match.group(1) if doctype_match else '<!DOCTYPE html>'
+                        # Use a parser that preserves original formatting
+                        soup = BeautifulSoup(content, 'html.parser', preserve_whitespace_tags=True)
                         
-                        # Remove XML declaration, DOCTYPE, and any commented XML declarations
-                        content = re.sub(r'<\?xml[^>]+\?>', '', content)
-                        content = re.sub(r'<!DOCTYPE[^>]+>', '', content)
-                        content = re.sub(r'<!--\?xml[^>]+\?-->', '', content)
-                        
-                        soup = BeautifulSoup(content, 'html.parser')
                         for figure in soup.find_all('figure'):
                             img = figure.find('img')
                             if img:
-                                src = urljoin(item.filename, img.get('src'))
+                                src = urljoin(item.filename, img.get('src', ''))
                                 if src in new_descriptions:
                                     img['alt'] = new_descriptions[src]['alt']
                                     
@@ -109,34 +100,28 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                                 summary_tag.string = 'Description'
                                                 details_tag.append(summary_tag)
                                                 p_tag = soup.new_tag('p')
+                                                p_tag.string = new_long_desc
                                                 details_tag.append(p_tag)
+                                                img['aria-details'] = details_id
+                                                figure.insert_after(details_tag)
                                             else:
-                                                details_tag = existing_details
-                                                details_tag['id'] = details_id
-                                                p_tag = details_tag.find('p') or soup.new_tag('p')
-                                                details_tag.clear()
-                                                details_tag.append(soup.new_tag('summary', string='Description'))
-                                                details_tag.append(p_tag)
-                                            
-                                            p_tag.string = new_long_desc
-                                            img['aria-details'] = details_id
-                                            
-                                            if existing_details:
-                                                existing_details.extract()
-                                            figure.insert_after(details_tag)
+                                                existing_details['id'] = details_id
+                                                p_tag = existing_details.find('p') or soup.new_tag('p')
+                                                p_tag.string = new_long_desc
+                                                if p_tag.parent != existing_details:
+                                                    existing_details.append(p_tag)
+                                                img['aria-details'] = details_id
                                         elif existing_details:
                                             existing_details.decompose()
                                             del img['aria-details']
                         
-                        # Preserve self-closing tags and attribute order
-                        for tag in soup.find_all():
-                            if isinstance(tag, Tag) and not tag.contents:
-                                tag.string = ""
-                                tag.can_be_empty_element = True
+                        # Convert soup back to string without pretty-printing
+                        new_content = str(soup)
                         
-                        # Reconstruct the content with correct XML declaration and DOCTYPE
-                        new_content = f"{xml_decl}\n{doctype}\n{soup.prettify(formatter='minimal')}"
-                        new_zip.writestr(item.filename, new_content)
+                        # Ensure self-closing tags
+                        new_content = re.sub(r'<(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)([^>]*)></\1>', r'<\1\2 />', new_content)
+                        
+                        new_zip.writestr(item.filename, new_content.encode('utf-8'))
                     else:
                         new_zip.writestr(item.filename, file.read())
     return new_epub_path
