@@ -94,12 +94,14 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                     details_id = generate_valid_id(src)
                                     img_tag = re.sub(r'aria-details="[^"]*"', f'aria-details="{details_id}"', img_tag)
                                     if 'aria-details' not in img_tag:
-                                        img_tag = img_tag[:-1] + f' aria-details="{details_id}">'
+                                        img_tag = img_tag[:-1] + f' aria-details="{details_id}" />'
+                                    elif not img_tag.endswith('/>'):
+                                        img_tag = img_tag[:-1] + ' />'
                             return img_tag
 
                         content_str = re.sub(r'<img[^>]+>', update_img, content_str)
                         
-                        # Update or add details tags
+                        # Update or add details tags only for modified images
                         for src, desc in new_descriptions.items():
                             if 'long_desc' in desc:
                                 details_id = generate_valid_id(src)
@@ -149,6 +151,10 @@ def update_descriptions():
                 if src not in new_descriptions:
                     new_descriptions[src] = {}
                 new_descriptions[src]['long_desc'] = value
+        
+        # Remove entries where neither alt text nor long description has changed
+        new_descriptions = {k: v for k, v in new_descriptions.items() if v.get('alt') or v.get('long_desc')}
+        
         epub_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         updated_epub_path = update_epub_descriptions(epub_path, new_descriptions)
         return send_file(updated_epub_path, as_attachment=True, download_name=f"updated_{filename}")
