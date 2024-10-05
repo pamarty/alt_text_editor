@@ -8,7 +8,6 @@ from urllib.parse import urljoin
 import base64
 import logging
 import chardet
-from bs4 import BeautifulSoup
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = tempfile.gettempdir()
@@ -41,21 +40,22 @@ def extract_images_and_descriptions(epub_path):
                 content = file.read()
                 encoding = chardet.detect(content)['encoding'] or 'utf-8'
                 content = content.decode(encoding)
-                soup = BeautifulSoup(content, 'html.parser')
-                for img in soup.find_all('img'):
-                    src = img.get('src')
+                img_tags = re.findall(r'<img[^>]+>', content)
+                for img_tag in img_tags:
+                    src = re.search(r'src="([^"]+)"', img_tag)
+                    alt = re.search(r'alt="([^"]*)"', img_tag)
+                    aria_details = re.search(r'aria-details="([^"]+)"', img_tag)
+                    
                     if src:
-                        alt = img.get('alt', '')
+                        src = src.group(1)
+                        alt = alt.group(1) if alt else ''
                         long_desc = ''
                         
-                        aria_details = img.get('aria-details')
                         if aria_details:
-                            details = soup.find('details', id=aria_details)
-                            if details:
-                                summary = details.find('summary')
-                                if summary:
-                                    summary.extract()
-                                long_desc = details.get_text(strip=True)
+                            details_id = aria_details.group(1)
+                            details_match = re.search(rf'<details[^>]*id="{details_id}"[^>]*>(.*?)</details>', content, re.DOTALL)
+                            if details_match:
+                                long_desc = re.sub(r'<summary>.*?</summary>', '', details_match.group(1), flags=re.DOTALL).strip()
                         
                         image_path = urljoin(file_name, src)
                         if image_path in zip_ref.namelist():
@@ -83,45 +83,36 @@ def update_epub_descriptions(epub_path, new_descriptions):
                         encoding = chardet.detect(content)['encoding'] or 'utf-8'
                         content_str = content.decode(encoding)
                         
-                        # Use BeautifulSoup for parsing
-                        soup = BeautifulSoup(content_str, 'html.parser')
+                        # Update img tags
+                        def update_img(match):
+                            img_tag = match.group(0)
+                            src = re.search(r'src="([^"]+)"', img_tag)
+                            if src:
+                                src = urljoin(item.filename, src.group(1))
+                                if src in new_descriptions:
+                                    img_tag = re.sub(r'alt="[^"]*"', f'alt="{new_descriptions[src]["alt"]}"', img_tag)
+                                    details_id = generate_valid_id(src)
+                                    img_tag = re.sub(r'aria-details="[^"]*"', f'aria-details="{details_id}"', img_tag)
+                                    if 'aria-details' not in img_tag:
+                                        img_tag = img_tag[:-1] + f' aria-details="{details_id}">'
+                            return img_tag
+
+                        content_str = re.sub(r'<img[^>]+>', update_img, content_str)
                         
-                        for img in soup.find_all('img'):
-                            src = urljoin(item.filename, img.get('src', ''))
-                            if src in new_descriptions:
-                                img['alt'] = new_descriptions[src]['alt']
+                        # Update or add details tags
+                        for src, desc in new_descriptions.items():
+                            if 'long_desc' in desc:
                                 details_id = generate_valid_id(src)
-                                img['aria-details'] = details_id
-                                
-                                if 'long_desc' in new_descriptions[src]:
-                                    new_long_desc = new_descriptions[src]['long_desc']
-                                    existing_details = soup.find('details', id=details_id)
-                                    
-                                    if new_long_desc:
-                                        if not existing_details:
-                                            details_tag = soup.new_tag('details', id=details_id)
-                                            summary_tag = soup.new_tag('summary')
-                                            summary_tag.string = 'Description'
-                                            details_tag.append(summary_tag)
-                                            p_tag = soup.new_tag('p')
-                                            p_tag.string = new_long_desc
-                                            details_tag.append(p_tag)
-                                            img.insert_after(details_tag)
-                                        else:
-                                            p_tag = existing_details.find('p') or soup.new_tag('p')
-                                            p_tag.string = new_long_desc
-                                            if p_tag.parent != existing_details:
-                                                existing_details.append(p_tag)
-                                    elif existing_details:
-                                        existing_details.decompose()
+                                details_tag = f'<details id="{details_id}"><summary>Description</summary><p>{desc["long_desc"]}</p></details>'
+                                existing_details = re.search(rf'<details[^>]*id="{details_id}".*?</details>', content_str, re.DOTALL)
+                                if existing_details:
+                                    content_str = content_str.replace(existing_details.group(0), details_tag)
+                                else:
+                                    img_tag = re.search(rf'<img[^>]*src="[^"]*{re.escape(os.path.basename(src))}"[^>]*>', content_str)
+                                    if img_tag:
+                                        content_str = content_str.replace(img_tag.group(0), img_tag.group(0) + details_tag)
                         
-                        # Convert soup back to string while preserving original formatting
-                        new_content = str(soup)
-                        
-                        # Ensure self-closing tags
-                        new_content = re.sub(r'<(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)([^>]*)></\1>', r'<\1\2 />', new_content)
-                        
-                        content = new_content.encode(encoding)
+                        content = content_str.encode(encoding)
                     
                     new_zip.writestr(item.filename, content)
     return new_epub_path
