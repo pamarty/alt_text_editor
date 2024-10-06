@@ -8,6 +8,7 @@ from urllib.parse import urljoin
 import base64
 import logging
 import chardet
+from lxml import etree
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = tempfile.gettempdir()
@@ -32,7 +33,11 @@ def extract_images_and_descriptions(epub_path):
             opf_content = opf_file.read()
             encoding = chardet.detect(opf_content)['encoding'] or 'utf-8'
             opf_content = opf_content.decode(encoding)
-            content_files = re.findall(r'href="([^"]+\.x?html?)"', opf_content)
+            parser = etree.XMLParser(recover=True, encoding=encoding)
+            opf_tree = etree.fromstring(opf_content.encode(encoding), parser=parser)
+            
+            ns = {'opf': 'http://www.idpf.org/2007/opf'}
+            content_files = opf_tree.xpath('//opf:item[@media-type="application/xhtml+xml"]/@href', namespaces=ns)
             content_files = [urljoin(opf_path, f) for f in content_files]
 
         for file_name in content_files:
@@ -76,10 +81,43 @@ def update_epub_descriptions(epub_path, new_descriptions):
     
     with zipfile.ZipFile(epub_path, 'r') as zip_ref:
         with zipfile.ZipFile(new_epub_path, 'w') as new_zip:
+            # Process OPF file
+            opf_path = next((f for f in zip_ref.namelist() if f.endswith('.opf')), None)
+            if opf_path:
+                with zip_ref.open(opf_path) as opf_file:
+                    opf_content = opf_file.read()
+                    encoding = chardet.detect(opf_content)['encoding'] or 'utf-8'
+                    opf_content = opf_content.decode(encoding)
+                    parser = etree.XMLParser(recover=True, encoding=encoding)
+                    opf_tree = etree.fromstring(opf_content.encode(encoding), parser=parser)
+                    
+                    ns = {'opf': 'http://www.idpf.org/2007/opf'}
+                    
+                    # Ensure cover image is correctly specified
+                    metadata = opf_tree.find('.//opf:metadata', namespaces=ns)
+                    cover_meta = metadata.find('meta[@name="cover"]')
+                    if cover_meta is None:
+                        cover_meta = etree.SubElement(metadata, 'meta', name="cover", content="cover-image")
+                    
+                    manifest = opf_tree.find('.//opf:manifest', namespaces=ns)
+                    cover_item = manifest.find('opf:item[@id="cover-image"]', namespaces=ns)
+                    if cover_item is None:
+                        cover_item = etree.SubElement(manifest, 'item', id="cover-image", href="images/cover.jpg", media_type="image/jpeg")
+                    
+                    spine = opf_tree.find('.//opf:spine', namespaces=ns)
+                    cover_itemref = spine.find('opf:itemref[@idref="cover"]', namespaces=ns)
+                    if cover_itemref is None:
+                        cover_itemref = etree.Element('itemref', idref="cover")
+                        spine.insert(0, cover_itemref)
+                    
+                    new_opf_content = etree.tostring(opf_tree, encoding=encoding, xml_declaration=True).decode(encoding)
+                    new_zip.writestr(opf_path, new_opf_content)
+            
+            # Process content files
             for item in zip_ref.infolist():
-                with zip_ref.open(item.filename) as file:
-                    content = file.read()
-                    if item.filename.endswith(('.xhtml', '.html', '.htm')):
+                if item.filename.endswith(('.xhtml', '.html', '.htm')):
+                    with zip_ref.open(item.filename) as file:
+                        content = file.read()
                         encoding = chardet.detect(content)['encoding'] or 'utf-8'
                         content_str = content.decode(encoding)
                         
@@ -94,9 +132,7 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                     details_id = generate_valid_id(src)
                                     img_tag = re.sub(r'aria-details="[^"]*"', f'aria-details="{details_id}"', img_tag)
                                     if 'aria-details' not in img_tag:
-                                        img_tag = img_tag[:-1] + f' aria-details="{details_id}" />'
-                                    elif not img_tag.endswith('/>'):
-                                        img_tag = img_tag[:-1] + ' />'
+                                        img_tag = img_tag[:-1] + f' aria-details="{details_id}">'
                             return img_tag
 
                         content_str = re.sub(r'<img[^>]+>', update_img, content_str)
@@ -114,9 +150,29 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                     if img_tag:
                                         content_str = content_str.replace(img_tag.group(0), img_tag.group(0) + details_tag)
                         
-                        content = content_str.encode(encoding)
-                    
-                    new_zip.writestr(item.filename, content)
+                        # Remove duplicate cover references if this is not the cover.xhtml file
+                        if not item.filename.endswith('cover.xhtml'):
+                            content_str = re.sub(r'<div[^>]*epub:type="cover".*?</div>', '', content_str, flags=re.DOTALL)
+                        
+                        new_zip.writestr(item.filename, content_str.encode(encoding))
+                else:
+                    new_zip.writestr(item.filename, zip_ref.read(item.filename))
+            
+            # Ensure cover.xhtml exists
+            cover_xhtml = '''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+<head>
+  <title>Cover</title>
+</head>
+<body>
+  <div epub:type="cover">
+    <img src="images/cover.jpg" alt="Cover Image" />
+  </div>
+</body>
+</html>'''
+            new_zip.writestr('cover.xhtml', cover_xhtml)
+    
     return new_epub_path
 
 @app.route('/', methods=['GET', 'POST'])
