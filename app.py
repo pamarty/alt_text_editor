@@ -80,7 +80,11 @@ def update_epub_descriptions(epub_path, new_descriptions):
     new_epub_path = os.path.join(temp_dir, 'updated_' + os.path.basename(epub_path))
     
     with zipfile.ZipFile(epub_path, 'r') as zip_ref:
-        with zipfile.ZipFile(new_epub_path, 'w') as new_zip:
+        with zipfile.ZipFile(new_epub_path, 'w', zipfile.ZIP_DEFLATED) as new_zip:
+            # Ensure mimetype is the first file
+            if 'mimetype' in zip_ref.namelist():
+                new_zip.writestr('mimetype', zip_ref.read('mimetype'), compress_type=zipfile.ZIP_STORED)
+
             # Process OPF file
             opf_path = next((f for f in zip_ref.namelist() if f.endswith('.opf')), None)
             if opf_path:
@@ -125,6 +129,8 @@ def update_epub_descriptions(epub_path, new_descriptions):
             
             # Process content files
             for item in zip_ref.infolist():
+                if item.filename == opf_path or item.filename == 'mimetype':
+                    continue  # Already processed
                 if item.filename.endswith(('.xhtml', '.html', '.htm')):
                     with zip_ref.open(item.filename) as file:
                         content = file.read()
