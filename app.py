@@ -104,6 +104,16 @@ def update_epub_descriptions(epub_path, new_descriptions):
                     if cover_item is None:
                         cover_item = etree.SubElement(manifest, 'item', id="cover-image", href="images/cover.jpg", media_type="image/jpeg")
                     
+                    # Ensure correct MIME types for content files
+                    for item in manifest.findall('opf:item', namespaces=ns):
+                        href = item.get('href')
+                        if href.endswith('.xhtml'):
+                            item.set('media-type', 'application/xhtml+xml')
+                        elif href.endswith('.html') or href.endswith('.htm'):
+                            item.set('media-type', 'text/html')
+                        elif href.endswith('.ncx'):
+                            item.set('media-type', 'application/x-dtbncx+xml')
+                    
                     spine = opf_tree.find('.//opf:spine', namespaces=ns)
                     cover_itemref = spine.find('opf:itemref[@idref="cover"]', namespaces=ns)
                     if cover_itemref is None:
@@ -130,9 +140,13 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                 if src in new_descriptions:
                                     img_tag = re.sub(r'alt="[^"]*"', f'alt="{new_descriptions[src]["alt"]}"', img_tag)
                                     details_id = generate_valid_id(src)
-                                    img_tag = re.sub(r'aria-details="[^"]*"', f'aria-details="{details_id}"', img_tag)
                                     if 'aria-details' not in img_tag:
-                                        img_tag = img_tag.rstrip('>') + f' aria-details="{details_id}"'
+                                        img_tag = img_tag.rstrip('/>')
+                                        img_tag += f' aria-details="{details_id}"'
+                                        if not img_tag.endswith('>'):
+                                            img_tag += '>'
+                                    else:
+                                        img_tag = re.sub(r'aria-details="[^"]*"', f'aria-details="{details_id}"', img_tag)
                             # Ensure img tag is self-closing
                             if not img_tag.endswith('/>'):
                                 img_tag = img_tag.rstrip('>') + '/>'
@@ -153,28 +167,9 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                     if img_tag:
                                         content_str = content_str.replace(img_tag.group(0), img_tag.group(0) + '\n' + details_tag)
                         
-                        # Remove duplicate cover references if this is not the cover.xhtml file
-                        if not item.filename.endswith('cover.xhtml'):
-                            content_str = re.sub(r'<div[^>]*epub:type="cover".*?</div>', '', content_str, flags=re.DOTALL)
-                        
                         new_zip.writestr(item.filename, content_str.encode(encoding))
                 else:
                     new_zip.writestr(item.filename, zip_ref.read(item.filename))
-            
-            # Ensure cover.xhtml exists and is correctly formatted
-            cover_xhtml = '''<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
-<head>
-  <title>Cover</title>
-</head>
-<body>
-  <div epub:type="cover">
-    <img src="../images/cover.jpg" alt="Cover Image" />
-  </div>
-</body>
-</html>'''
-            new_zip.writestr('OEBPS/xhtml/cover.xhtml', cover_xhtml)
     
     return new_epub_path
 
