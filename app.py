@@ -170,7 +170,7 @@ def update_epub_descriptions(epub_path, new_descriptions):
 </head>
 <body>
   <div epub:type="cover">
-    <img src="images/cover.jpg" alt="Cover Image" />
+    <img src="../images/cover.jpg" alt="Cover Image" />
   </div>
 </body>
 </html>'''
