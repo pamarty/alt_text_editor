@@ -81,27 +81,61 @@ def update_epub_descriptions(epub_path, new_descriptions):
     
     with zipfile.ZipFile(epub_path, 'r') as zip_ref:
         with zipfile.ZipFile(new_epub_path, 'w') as new_zip:
+            # Process OPF file
+            opf_path = next((f for f in zip_ref.namelist() if f.endswith('.opf')), None)
+            if opf_path:
+                with zip_ref.open(opf_path) as opf_file:
+                    opf_content = opf_file.read()
+                    encoding = chardet.detect(opf_content)['encoding'] or 'utf-8'
+                    opf_content = opf_content.decode(encoding)
+                    parser = etree.XMLParser(recover=True, encoding=encoding)
+                    opf_tree = etree.fromstring(opf_content.encode(encoding), parser=parser)
+                    
+                    ns = {'opf': 'http://www.idpf.org/2007/opf'}
+                    
+                    # Ensure cover image is correctly specified
+                    metadata = opf_tree.find('.//opf:metadata', namespaces=ns)
+                    cover_meta = metadata.find('meta[@name="cover"]')
+                    if cover_meta is None:
+                        cover_meta = etree.SubElement(metadata, 'meta', name="cover", content="cover-image")
+                    
+                    manifest = opf_tree.find('.//opf:manifest', namespaces=ns)
+                    cover_item = manifest.find('opf:item[@id="cover-image"]', namespaces=ns)
+                    if cover_item is None:
+                        cover_item = etree.SubElement(manifest, 'item', id="cover-image", href="images/cover.jpg", media_type="image/jpeg")
+                    
+                    spine = opf_tree.find('.//opf:spine', namespaces=ns)
+                    cover_itemref = spine.find('opf:itemref[@idref="cover"]', namespaces=ns)
+                    if cover_itemref is None:
+                        cover_itemref = etree.Element('itemref', idref="cover")
+                        spine.insert(0, cover_itemref)
+                    
+                    new_opf_content = etree.tostring(opf_tree, encoding=encoding, xml_declaration=True).decode(encoding)
+                    new_zip.writestr(opf_path, new_opf_content)
+            
+            # Process content files
             for item in zip_ref.infolist():
-                with zip_ref.open(item.filename) as file:
-                    content = file.read()
-                    if item.filename.endswith(('.xhtml', '.html', '.htm')):
+                if item.filename.endswith(('.xhtml', '.html', '.htm')):
+                    with zip_ref.open(item.filename) as file:
+                        content = file.read()
                         encoding = chardet.detect(content)['encoding'] or 'utf-8'
                         content_str = content.decode(encoding)
                         
-                        # Only update img tags for modified images
+                        # Update img tags
                         def update_img(match):
                             img_tag = match.group(0)
                             src = re.search(r'src="([^"]+)"', img_tag)
                             if src:
                                 src = urljoin(item.filename, src.group(1))
                                 if src in new_descriptions:
-                                    # Preserve existing attributes
-                                    attrs = dict(re.findall(r'(\S+)=["\'](.*?)["\']', img_tag))
-                                    attrs['alt'] = new_descriptions[src]['alt']
-                                    attrs['aria-details'] = generate_valid_id(src)
-                                    
-                                    # Reconstruct the img tag
-                                    img_tag = '<img ' + ' '.join(f'{k}="{v}"' for k, v in attrs.items()) + '>'
+                                    img_tag = re.sub(r'alt="[^"]*"', f'alt="{new_descriptions[src]["alt"]}"', img_tag)
+                                    details_id = generate_valid_id(src)
+                                    img_tag = re.sub(r'aria-details="[^"]*"', f'aria-details="{details_id}"', img_tag)
+                                    if 'aria-details' not in img_tag:
+                                        img_tag = img_tag.rstrip('>') + f' aria-details="{details_id}"'
+                            # Ensure img tag is self-closing
+                            if not img_tag.endswith('/>'):
+                                img_tag = img_tag.rstrip('>') + '/>'
                             return img_tag
 
                         content_str = re.sub(r'<img[^>]+>', update_img, content_str)
@@ -117,11 +151,31 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                 else:
                                     img_tag = re.search(rf'<img[^>]*src="[^"]*{re.escape(os.path.basename(src))}"[^>]*>', content_str)
                                     if img_tag:
-                                        content_str = content_str.replace(img_tag.group(0), img_tag.group(0) + details_tag)
+                                        content_str = content_str.replace(img_tag.group(0), img_tag.group(0) + '\n' + details_tag)
+                        
+                        # Remove duplicate cover references if this is not the cover.xhtml file
+                        if not item.filename.endswith('cover.xhtml'):
+                            content_str = re.sub(r'<div[^>]*epub:type="cover".*?</div>', '', content_str, flags=re.DOTALL)
                         
                         new_zip.writestr(item.filename, content_str.encode(encoding))
-                    else:
-                        new_zip.writestr(item.filename, content)
+                else:
+                    new_zip.writestr(item.filename, zip_ref.read(item.filename))
+            
+            # Ensure cover.xhtml exists and is correctly formatted
+            cover_xhtml = '''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+<head>
+  <title>Cover</title>
+</head>
+<body>
+  <div epub:type="cover">
+    <img src="images/cover.jpg" alt="Cover Image" />
+  </div>
+</body>
+</html>'''
+            new_zip.writestr('OEBPS/xhtml/cover.xhtml', cover_xhtml)
+    
     return new_epub_path
 
 @app.route('/', methods=['GET', 'POST'])
