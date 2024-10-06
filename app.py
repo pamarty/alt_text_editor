@@ -90,8 +90,8 @@ def update_epub_descriptions(epub_path, new_descriptions):
             if opf_path:
                 with zip_ref.open(opf_path) as opf_file:
                     opf_content = opf_file.read()
-                    encoding = chardet.detect(opf_content)['encoding'] or 'utf-8'
-                    opf_content = opf_content.decode(encoding)
+                    encoding = 'utf-8'  # Force UTF-8 encoding
+                    opf_content = opf_content.decode(encoding, errors='ignore')
                     parser = etree.XMLParser(recover=True, encoding=encoding)
                     opf_tree = etree.fromstring(opf_content.encode(encoding), parser=parser)
                     
@@ -125,7 +125,7 @@ def update_epub_descriptions(epub_path, new_descriptions):
                         spine.insert(0, cover_itemref)
                     
                     new_opf_content = etree.tostring(opf_tree, encoding=encoding, xml_declaration=True).decode(encoding)
-                    new_zip.writestr(opf_path, new_opf_content)
+                    new_zip.writestr(opf_path, new_opf_content.encode(encoding))
             
             # Process content files
             for item in zip_ref.infolist():
@@ -134,8 +134,8 @@ def update_epub_descriptions(epub_path, new_descriptions):
                 if item.filename.endswith(('.xhtml', '.html', '.htm')):
                     with zip_ref.open(item.filename) as file:
                         content = file.read()
-                        encoding = chardet.detect(content)['encoding'] or 'utf-8'
-                        content_str = content.decode(encoding)
+                        encoding = 'utf-8'  # Force UTF-8 encoding
+                        content_str = content.decode(encoding, errors='ignore')
                         
                         # Update img tags
                         def update_img(match):
@@ -160,9 +160,9 @@ def update_epub_descriptions(epub_path, new_descriptions):
 
                         content_str = re.sub(r'<img[^>]+>', update_img, content_str)
                         
-                        # Update or add details tags only for modified images
+                        # Update or add details tags only for modified images with non-empty long descriptions
                         for src, desc in new_descriptions.items():
-                            if 'long_desc' in desc:
+                            if 'long_desc' in desc and desc['long_desc'].strip():
                                 details_id = generate_valid_id(src)
                                 details_tag = f'<details id="{details_id}"><summary>Description</summary><p>{desc["long_desc"]}</p></details>'
                                 existing_details = re.search(rf'<details[^>]*id="{details_id}".*?</details>', content_str, re.DOTALL)
