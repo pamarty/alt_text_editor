@@ -155,13 +155,13 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                         if 'long_desc' in new_descriptions[src] and new_descriptions[src]['long_desc'].strip():
                                             # Add or update aria-details
                                             if 'aria-details' not in img_tag:
-                                                img_tag = img_tag.rstrip('/>') + f' aria-details="{details_id}">'
+                                                img_tag = img_tag.rstrip('>') + f' aria-details="{details_id}">'
                                             else:
                                                 img_tag = re.sub(r'aria-details="[^"]*"', f'aria-details="{details_id}"', img_tag)
                                             
                                             # Ensure img tag is properly closed
-                                            if not img_tag.endswith('>'):
-                                                img_tag = img_tag.rstrip('/') + '>'
+                                            if not img_tag.endswith('/>'):
+                                                img_tag = img_tag.rstrip('>') + '/>'
                                             
                                             # Create or update details tag
                                             details_tag = f'<details id="{details_id}"><summary>Description</summary><p>{new_descriptions[src]["long_desc"]}</p></details>'
@@ -171,8 +171,8 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                             # Remove aria-details if there's no long description
                                             img_tag = re.sub(r'\s*aria-details="[^"]*"', '', img_tag)
                                             # Ensure img tag is properly closed
-                                            if not img_tag.endswith('>'):
-                                                img_tag = img_tag.rstrip('/') + '>'
+                                            if not img_tag.endswith('/>'):
+                                                img_tag = img_tag.rstrip('>') + '/>'
                                             # Remove existing details tag if any
                                             full_match = re.sub(rf'<details[^>]*id="{details_id}".*?</details>', '', full_match, flags=re.DOTALL)
                                         
@@ -180,18 +180,15 @@ def update_epub_descriptions(epub_path, new_descriptions):
                             
                             return full_match
 
-                        # Update content within p tags containing images
-                        content_str = re.sub(r'<p[^>]*>.*?<img.*?</p>', update_content, content_str, flags=re.DOTALL)
-                        
-                        # Handle images inside figure tags
+                        # Update content within figure tags containing images
                         content_str = re.sub(r'<figure[^>]*>.*?</figure>', update_content, content_str, flags=re.DOTALL)
 
                         new_zip.writestr(item.filename, content_str.encode(encoding))
                 elif item.filename.endswith('nav.xhtml'):
-                    # Process navigation file to fix fragment identifiers
+                    # Process navigation file to remove fragment identifiers
                     with zip_ref.open(item.filename) as file:
                         content = file.read().decode('utf-8')
-                        # Remove fragment identifiers from href attributes
+                        # Remove all fragment identifiers from href attributes
                         content = re.sub(r'href="([^"]+)#[^"]*"', r'href="\1"', content)
                         new_zip.writestr(item.filename, content.encode('utf-8'))
                 else:
