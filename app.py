@@ -145,14 +145,18 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                 src = urljoin(item.filename, src.group(1))
                                 if src in new_descriptions:
                                     img_tag = re.sub(r'alt="[^"]*"', f'alt="{new_descriptions[src]["alt"]}"', img_tag)
-                                    details_id = generate_valid_id(src)
-                                    if 'aria-details' not in img_tag:
-                                        img_tag = img_tag.rstrip('/>')
-                                        img_tag += f' aria-details="{details_id}"'
-                                        if not img_tag.endswith('>'):
-                                            img_tag += '>'
+                                    if 'long_desc' in new_descriptions[src] and new_descriptions[src]['long_desc'].strip():
+                                        details_id = generate_valid_id(src)
+                                        if 'aria-details' not in img_tag:
+                                            img_tag = img_tag.rstrip('/>')
+                                            img_tag += f' aria-details="{details_id}"'
+                                            if not img_tag.endswith('>'):
+                                                img_tag += '>'
+                                        else:
+                                            img_tag = re.sub(r'aria-details="[^"]*"', f'aria-details="{details_id}"', img_tag)
                                     else:
-                                        img_tag = re.sub(r'aria-details="[^"]*"', f'aria-details="{details_id}"', img_tag)
+                                        # Remove aria-details if there's no long description
+                                        img_tag = re.sub(r'\s*aria-details="[^"]*"', '', img_tag)
                             # Ensure img tag is self-closing
                             if not img_tag.endswith('/>'):
                                 img_tag = img_tag.rstrip('>') + '/>'
@@ -169,9 +173,15 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                 if existing_details:
                                     content_str = content_str.replace(existing_details.group(0), details_tag)
                                 else:
-                                    img_tag = re.search(rf'<img[^>]*src="[^"]*{re.escape(os.path.basename(src))}"[^>]*>', content_str)
-                                    if img_tag:
-                                        content_str = content_str.replace(img_tag.group(0), img_tag.group(0) + '\n' + details_tag)
+                                    figure_pattern = rf'<figure[^>]*>.*?<img[^>]*src="[^"]*{re.escape(os.path.basename(src))}"[^>]*>.*?</figure>'
+                                    figure_match = re.search(figure_pattern, content_str, re.DOTALL)
+                                    if figure_match:
+                                        figure_end = figure_match.end()
+                                        content_str = content_str[:figure_end] + '\n' + details_tag + content_str[figure_end:]
+                            else:
+                                # Remove details tag if there's no long description
+                                details_id = generate_valid_id(src)
+                                content_str = re.sub(rf'<details[^>]*id="{details_id}".*?</details>', '', content_str, flags=re.DOTALL)
                         
                         new_zip.writestr(item.filename, content_str.encode(encoding))
                 else:
