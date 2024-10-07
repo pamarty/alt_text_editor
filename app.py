@@ -137,51 +137,46 @@ def update_epub_descriptions(epub_path, new_descriptions):
                         encoding = 'utf-8'  # Force UTF-8 encoding
                         content_str = content.decode(encoding, errors='ignore')
                         
-                        # Update img tags
-                        def update_img(match):
-                            img_tag = match.group(0)
-                            src = re.search(r'src="([^"]+)"', img_tag)
-                            if src:
-                                src = urljoin(item.filename, src.group(1))
-                                if src in new_descriptions:
-                                    img_tag = re.sub(r'alt="[^"]*"', f'alt="{new_descriptions[src]["alt"]}"', img_tag)
-                                    if 'long_desc' in new_descriptions[src] and new_descriptions[src]['long_desc'].strip():
+                        # Update img tags and add/update details tags
+                        def update_content(match):
+                            figure_tag = match.group(0)
+                            img_match = re.search(r'<img[^>]+>', figure_tag)
+                            if img_match:
+                                img_tag = img_match.group(0)
+                                src = re.search(r'src="([^"]+)"', img_tag)
+                                if src:
+                                    src = urljoin(item.filename, src.group(1))
+                                    if src in new_descriptions:
+                                        # Update alt text
+                                        img_tag = re.sub(r'alt="[^"]*"', f'alt="{new_descriptions[src]["alt"]}"', img_tag)
+                                        
+                                        # Handle long description
                                         details_id = generate_valid_id(src)
-                                        if 'aria-details' not in img_tag:
-                                            img_tag = img_tag.rstrip('/>')
-                                            img_tag += f' aria-details="{details_id}"'
-                                            if not img_tag.endswith('>'):
-                                                img_tag += '>'
+                                        if 'long_desc' in new_descriptions[src] and new_descriptions[src]['long_desc'].strip():
+                                            # Add or update aria-details
+                                            if 'aria-details' not in img_tag:
+                                                img_tag = img_tag.rstrip('/>')
+                                                img_tag += f' aria-details="{details_id}"'
+                                                if not img_tag.endswith('>'):
+                                                    img_tag += '>'
+                                            else:
+                                                img_tag = re.sub(r'aria-details="[^"]*"', f'aria-details="{details_id}"', img_tag)
+                                            
+                                            # Create or update details tag
+                                            details_tag = f'<details id="{details_id}"><summary>Description</summary><p>{new_descriptions[src]["long_desc"]}</p></details>'
+                                            figure_tag = figure_tag.replace(img_tag, img_tag)
+                                            figure_tag += '\n' + details_tag
                                         else:
-                                            img_tag = re.sub(r'aria-details="[^"]*"', f'aria-details="{details_id}"', img_tag)
-                                    else:
-                                        # Remove aria-details if there's no long description
-                                        img_tag = re.sub(r'\s*aria-details="[^"]*"', '', img_tag)
-                            # Ensure img tag is self-closing
-                            if not img_tag.endswith('/>'):
-                                img_tag = img_tag.rstrip('>') + '/>'
-                            return img_tag
+                                            # Remove aria-details if there's no long description
+                                            img_tag = re.sub(r'\s*aria-details="[^"]*"', '', img_tag)
+                                            # Remove existing details tag if any
+                                            figure_tag = re.sub(rf'<details[^>]*id="{details_id}".*?</details>', '', figure_tag, flags=re.DOTALL)
+                                        
+                                        figure_tag = figure_tag.replace(img_match.group(0), img_tag)
+                            
+                            return figure_tag
 
-                        content_str = re.sub(r'<img[^>]+>', update_img, content_str)
-                        
-                        # Update or add details tags only for modified images with non-empty long descriptions
-                        for src, desc in new_descriptions.items():
-                            if 'long_desc' in desc and desc['long_desc'].strip():
-                                details_id = generate_valid_id(src)
-                                details_tag = f'<details id="{details_id}"><summary>Description</summary><p>{desc["long_desc"]}</p></details>'
-                                existing_details = re.search(rf'<details[^>]*id="{details_id}".*?</details>', content_str, re.DOTALL)
-                                if existing_details:
-                                    content_str = content_str.replace(existing_details.group(0), details_tag)
-                                else:
-                                    figure_pattern = rf'<figure[^>]*>.*?<img[^>]*src="[^"]*{re.escape(os.path.basename(src))}"[^>]*>.*?</figure>'
-                                    figure_match = re.search(figure_pattern, content_str, re.DOTALL)
-                                    if figure_match:
-                                        figure_end = figure_match.end()
-                                        content_str = content_str[:figure_end] + '\n' + details_tag + content_str[figure_end:]
-                            else:
-                                # Remove details tag if there's no long description
-                                details_id = generate_valid_id(src)
-                                content_str = re.sub(rf'<details[^>]*id="{details_id}".*?</details>', '', content_str, flags=re.DOTALL)
+                        content_str = re.sub(r'<figure[^>]*>.*?</figure>', update_content, content_str, flags=re.DOTALL)
                         
                         new_zip.writestr(item.filename, content_str.encode(encoding))
                 else:
