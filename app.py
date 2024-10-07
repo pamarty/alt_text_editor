@@ -176,10 +176,10 @@ def update_epub_descriptions(epub_path, new_descriptions):
                             return full_match
 
                         # Update content for all img tags
-                        content_str = re.sub(r'<img[^>]+>', lambda m: update_content(m.group(0)), content_str)
+                        content_str = re.sub(r'(<img[^>]+>)', update_content, content_str)
 
                         # Update content within figure tags containing images
-                        content_str = re.sub(r'<figure[^>]*>.*?</figure>', update_content, content_str, flags=re.DOTALL)
+                        content_str = re.sub(r'(<figure[^>]*>.*?</figure>)', update_content, content_str, flags=re.DOTALL)
 
                         new_zip.writestr(item.filename, content_str.encode(encoding))
                 elif item.filename.endswith('nav.xhtml'):
