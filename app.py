@@ -155,13 +155,9 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                         if 'long_desc' in new_descriptions[src] and new_descriptions[src]['long_desc'].strip():
                                             # Add or update aria-details
                                             if 'aria-details' not in img_tag:
-                                                img_tag = img_tag.rstrip('>') + f' aria-details="{details_id}">'
+                                                img_tag = img_tag.rstrip('>').rstrip('/') + f' aria-details="{details_id}"/>'
                                             else:
                                                 img_tag = re.sub(r'aria-details="[^"]*"', f'aria-details="{details_id}"', img_tag)
-                                            
-                                            # Ensure img tag is properly closed
-                                            if not img_tag.endswith('/>'):
-                                                img_tag = img_tag.rstrip('>') + '/>'
                                             
                                             # Create or update details tag
                                             details_tag = f'<details id="{details_id}"><summary>Description</summary><p>{new_descriptions[src]["long_desc"]}</p></details>'
@@ -170,11 +166,10 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                         else:
                                             # Remove aria-details if there's no long description
                                             img_tag = re.sub(r'\s*aria-details="[^"]*"', '', img_tag)
-                                            # Ensure img tag is properly closed
-                                            if not img_tag.endswith('/>'):
-                                                img_tag = img_tag.rstrip('>') + '/>'
-                                            # Remove existing details tag if any
-                                            full_match = re.sub(rf'<details[^>]*id="{details_id}".*?</details>', '', full_match, flags=re.DOTALL)
+                                        
+                                        # Ensure img tag is properly formatted
+                                        if not img_tag.endswith('/>'):
+                                            img_tag = img_tag.rstrip('>').rstrip('/') + '/>'
                                         
                                         full_match = full_match.replace(img_match.group(0), img_tag)
                             
