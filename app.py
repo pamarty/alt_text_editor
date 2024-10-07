@@ -137,9 +137,21 @@ def update_epub_descriptions(epub_path, new_descriptions):
                         encoding = 'utf-8'  # Force UTF-8 encoding
                         content_str = content.decode(encoding, errors='ignore')
                         
+                        # Keep track of used IDs to prevent duplicates
+                        used_ids = set()
+                        
+                        def generate_unique_id(base_id):
+                            unique_id = base_id
+                            counter = 1
+                            while unique_id in used_ids:
+                                unique_id = f"{base_id}-{counter}"
+                                counter += 1
+                            used_ids.add(unique_id)
+                            return unique_id
+
                         # Update img tags and add/update details tags
                         def update_content(match):
-                            full_match = match.group(0)
+                            full_match = match.group(1)
                             img_match = re.search(r'<img[^>]+>', full_match)
                             if img_match:
                                 img_tag = img_match.group(0)
@@ -151,7 +163,8 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                         img_tag = re.sub(r'alt="[^"]*"', f'alt="{new_descriptions[src]["alt"]}"', img_tag)
                                         
                                         # Handle long description
-                                        details_id = generate_valid_id(src)
+                                        base_id = generate_valid_id(src)
+                                        details_id = generate_unique_id(base_id)
                                         if 'long_desc' in new_descriptions[src] and new_descriptions[src]['long_desc'].strip():
                                             # Add or update aria-details
                                             if 'aria-details' not in img_tag:
@@ -161,8 +174,14 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                             
                                             # Create or update details tag
                                             details_tag = f'<details id="{details_id}"><summary>Description</summary><p>{new_descriptions[src]["long_desc"]}</p></details>'
-                                            full_match = full_match.replace(img_match.group(0), img_tag)
-                                            full_match += '\n' + details_tag
+                                            
+                                            # Check if we're inside a <figure> tag
+                                            if full_match.startswith('<figure'):
+                                                # Insert details tag after the figure
+                                                full_match = full_match.rstrip() + details_tag
+                                            else:
+                                                # For inline images, wrap both img and details in a div
+                                                full_match = f'<div>{img_tag}\n{details_tag}</div>'
                                         else:
                                             # Remove aria-details if there's no long description
                                             img_tag = re.sub(r'\s*aria-details="[^"]*"', '', img_tag)
@@ -171,7 +190,10 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                         if not img_tag.endswith('/>'):
                                             img_tag = img_tag.rstrip('>').rstrip('/') + '/>'
                                         
-                                        full_match = full_match.replace(img_match.group(0), img_tag)
+                                        if full_match.startswith('<figure'):
+                                            full_match = re.sub(r'<img[^>]+>', img_tag, full_match)
+                                        else:
+                                            full_match = img_tag
                             
                             return full_match
 
