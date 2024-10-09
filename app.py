@@ -125,16 +125,17 @@ def update_epub_descriptions(epub_path, new_descriptions):
                             img_tag = img_tag.rstrip('>').rstrip('/') + f' aria-details="{details_id}"/>'
                             
                             # Create or update details tag
-                            details_tag = f'\n<details id="{details_id}"><summary>Description</summary><p>{new_descriptions[src]["long_desc"]}</p></details>'
+                            details_tag = f'<details id="{details_id}"><summary>Description</summary><p>{new_descriptions[src]["long_desc"]}</p></details>'
                             
-                            # Replace existing details or add new one
                             if existing_details:
-                                full_match = full_match.replace(existing_details.group(0), details_tag)
+                                # Update existing details tag
+                                full_match = re.sub(r'<details[^>]*>.*?</details>', details_tag, full_match, flags=re.DOTALL)
                             else:
+                                # Add new details tag
                                 if full_match.startswith('<figure'):
-                                    full_match = full_match.rstrip() + details_tag
+                                    full_match = full_match.rstrip() + '\n' + details_tag
                                 else:
-                                    full_match = f'<div>{img_tag}{details_tag}</div>'
+                                    full_match = f'<div>{img_tag}\n{details_tag}</div>'
                         else:
                             # Remove aria-details and details tag if long description is empty
                             img_tag = re.sub(r'\s*aria-details="[^"]*"', '', img_tag)
