@@ -163,8 +163,9 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                         img_tag = re.sub(r'alt="[^"]*"', f'alt="{new_descriptions[src]["alt"]}"', img_tag)
                                         
                                         # Handle long description
-                                        base_id = generate_valid_id(src)
-                                        details_id = generate_unique_id(base_id)
+                                        base_id = re.search(r'([^/]+)\.[^.]+$', src)
+                                        base_id = base_id.group(1) if base_id else 'img'
+                                        details_id = generate_unique_id(f"longdesc-{base_id}")
                                         if 'long_desc' in new_descriptions[src] and new_descriptions[src]['long_desc'].strip():
                                             # Add or update aria-details
                                             if 'aria-details' not in img_tag:
@@ -173,7 +174,7 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                                 img_tag = re.sub(r'aria-details="[^"]*"', f'aria-details="{details_id}"', img_tag)
                                             
                                             # Create or update details tag
-                                            details_tag = f'<details id="{details_id}"><summary>Description</summary><p>{new_descriptions[src]["long_desc"]}</p></details>'
+                                            details_tag = f'\n<details id="{details_id}"><summary>Description</summary><p>{new_descriptions[src]["long_desc"]}</p></details>'
                                             
                                             # Check if we're inside a <figure> tag
                                             if full_match.startswith('<figure'):
@@ -181,7 +182,7 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                                 full_match = full_match.rstrip() + details_tag
                                             else:
                                                 # For inline images, wrap both img and details in a div
-                                                full_match = f'<div>{img_tag}\n{details_tag}</div>'
+                                                full_match = f'<div>{img_tag}{details_tag}</div>'
                                         else:
                                             # Remove aria-details if there's no long description
                                             img_tag = re.sub(r'\s*aria-details="[^"]*"', '', img_tag)
