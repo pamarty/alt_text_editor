@@ -162,9 +162,9 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                         # Update alt text
                                         img_tag = re.sub(r'alt="[^"]*"', f'alt="{new_descriptions[src]["alt"]}"', img_tag)
                                         
-                                        # Handle long description
-                                        base_id = generate_valid_id(src)  # This uses the original function to generate the ID
-                                        details_id = generate_unique_id(base_id)  # This is for aria-details
+                                        # Extract the existing aria-details value if it exists
+                                        aria_details_match = re.search(r'aria-details="([^"]*)"', img_tag)
+                                        existing_aria_details = aria_details_match.group(1) if aria_details_match else None
                                         
                                         # Create a shorter ID for the details tag
                                         short_id = re.search(r'([^/]+)\.[^.]+$', src)
@@ -172,11 +172,9 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                         short_details_id = f"longdesc-{short_id}"
                                         
                                         if 'long_desc' in new_descriptions[src] and new_descriptions[src]['long_desc'].strip():
-                                            # Add or update aria-details (using the original longer ID)
-                                            if 'aria-details' not in img_tag:
-                                                img_tag = img_tag.rstrip('>').rstrip('/') + f' aria-details="{details_id}"/>'
-                                            else:
-                                                img_tag = re.sub(r'aria-details="[^"]*"', f'aria-details="{details_id}"', img_tag)
+                                            # Add aria-details only if it doesn't exist
+                                            if not existing_aria_details:
+                                                img_tag = img_tag.rstrip('>').rstrip('/') + f' aria-details="{short_details_id}"/>'
                                             
                                             # Create or update details tag (using the new shorter ID)
                                             details_tag = f'\n<details id="{short_details_id}"><summary>Description</summary><p>{new_descriptions[src]["long_desc"]}</p></details>'
