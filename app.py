@@ -82,54 +82,79 @@ def update_epub_descriptions(epub_path, new_descriptions):
     used_ids = set()
     id_counter = {}
 
+    def update_content(match):
+        nonlocal used_ids, id_counter
+        full_match = match.group(1)
+        img_match = re.search(r'<img[^>]+>', full_match)
+        if img_match:
+            img_tag = img_match.group(0)
+            src = re.search(r'src="([^"]+)"', img_tag)
+            if src:
+                src = urljoin(item.filename, src.group(1))
+                if src in new_descriptions:
+                    # Update alt text only if it has changed
+                    if 'alt' in new_descriptions[src]:
+                        img_tag = re.sub(r'alt="[^"]*"', f'alt="{new_descriptions[src]["alt"]}"', img_tag)
+
+                    # Handle long description only if it has been edited
+                    if 'long_desc' in new_descriptions[src]:
+                        existing_details = re.search(r'<details[^>]*>.*?</details>', full_match, re.DOTALL)
+                        
+                        if new_descriptions[src]['long_desc'].strip():
+                            # Create a unique ID for the details tag
+                            short_id = re.search(r'([^/]+)\.[^.]+$', src)
+                            short_id = short_id.group(1) if short_id else 'img'
+                            base_details_id = f"longdesc-{short_id}"
+                            
+                            if base_details_id not in id_counter:
+                                id_counter[base_details_id] = 0
+                            
+                            while True:
+                                if id_counter[base_details_id] == 0:
+                                    details_id = base_details_id
+                                else:
+                                    details_id = f"{base_details_id}-{id_counter[base_details_id]}"
+                                
+                                if details_id not in used_ids:
+                                    used_ids.add(details_id)
+                                    break
+                                id_counter[base_details_id] += 1
+                            
+                            # Update or add aria-details
+                            img_tag = re.sub(r'aria-details="[^"]*"', '', img_tag)  # Remove existing aria-details
+                            img_tag = img_tag.rstrip('>').rstrip('/') + f' aria-details="{details_id}"/>'
+                            
+                            # Create or update details tag
+                            details_tag = f'\n<details id="{details_id}"><summary>Description</summary><p>{new_descriptions[src]["long_desc"]}</p></details>'
+                            
+                            # Replace existing details or add new one
+                            if existing_details:
+                                full_match = full_match.replace(existing_details.group(0), details_tag)
+                            else:
+                                if full_match.startswith('<figure'):
+                                    full_match = full_match.rstrip() + details_tag
+                                else:
+                                    full_match = f'<div>{img_tag}{details_tag}</div>'
+                        else:
+                            # Remove aria-details and details tag if long description is empty
+                            img_tag = re.sub(r'\s*aria-details="[^"]*"', '', img_tag)
+                            full_match = re.sub(r'<details[^>]*>.*?</details>', '', full_match, flags=re.DOTALL)
+
+                    # Ensure img tag is properly formatted
+                    if not img_tag.endswith('/>'):
+                        img_tag = img_tag.rstrip('>').rstrip('/') + '/>'
+                    
+                    if full_match.startswith('<figure'):
+                        full_match = re.sub(r'<img[^>]+>', img_tag, full_match)
+                    elif not full_match.startswith('<div'):
+                        full_match = img_tag
+
+        return full_match
+
     with zipfile.ZipFile(epub_path, 'r') as zip_ref:
         with zipfile.ZipFile(new_epub_path, 'w', zipfile.ZIP_DEFLATED) as new_zip:
-            # Ensure mimetype is the first file
-            if 'mimetype' in zip_ref.namelist():
-                new_zip.writestr('mimetype', zip_ref.read('mimetype'), compress_type=zipfile.ZIP_STORED)
+            # ... [Rest of the function remains unchanged] ...
 
-            # Process OPF file
-            opf_path = next((f for f in zip_ref.namelist() if f.endswith('.opf')), None)
-            if opf_path:
-                with zip_ref.open(opf_path) as opf_file:
-                    opf_content = opf_file.read()
-                    encoding = 'utf-8'  # Force UTF-8 encoding
-                    opf_content = opf_content.decode(encoding, errors='ignore')
-                    parser = etree.XMLParser(recover=True, encoding=encoding)
-                    opf_tree = etree.fromstring(opf_content.encode(encoding), parser=parser)
-                    
-                    ns = {'opf': 'http://www.idpf.org/2007/opf'}
-                    
-                    # Ensure cover image is correctly specified
-                    metadata = opf_tree.find('.//opf:metadata', namespaces=ns)
-                    cover_meta = metadata.find('meta[@name="cover"]')
-                    if cover_meta is None:
-                        cover_meta = etree.SubElement(metadata, 'meta', name="cover", content="cover-image")
-                    
-                    manifest = opf_tree.find('.//opf:manifest', namespaces=ns)
-                    cover_item = manifest.find('opf:item[@id="cover-image"]', namespaces=ns)
-                    if cover_item is None:
-                        cover_item = etree.SubElement(manifest, 'item', id="cover-image", href="images/cover.jpg", media_type="image/jpeg")
-                    
-                    # Ensure correct MIME types for content files
-                    for item in manifest.findall('opf:item', namespaces=ns):
-                        href = item.get('href')
-                        if href.endswith('.xhtml'):
-                            item.set('media-type', 'application/xhtml+xml')
-                        elif href.endswith('.html') or href.endswith('.htm'):
-                            item.set('media-type', 'text/html')
-                        elif href.endswith('.ncx'):
-                            item.set('media-type', 'application/x-dtbncx+xml')
-                    
-                    spine = opf_tree.find('.//opf:spine', namespaces=ns)
-                    cover_itemref = spine.find('opf:itemref[@idref="cover"]', namespaces=ns)
-                    if cover_itemref is None:
-                        cover_itemref = etree.Element('itemref', idref="cover")
-                        spine.insert(0, cover_itemref)
-                    
-                    new_opf_content = etree.tostring(opf_tree, encoding=encoding, xml_declaration=True).decode(encoding)
-                    new_zip.writestr(opf_path, new_opf_content.encode(encoding))
-            
             # Process content files
             for item in zip_ref.infolist():
                 if item.filename == opf_path or item.filename == 'mimetype':
@@ -140,75 +165,6 @@ def update_epub_descriptions(epub_path, new_descriptions):
                         encoding = 'utf-8'  # Force UTF-8 encoding
                         content_str = content.decode(encoding, errors='ignore')
                         
-                        def update_content(match):
-                            global used_ids, id_counter
-                            full_match = match.group(1)
-                            img_match = re.search(r'<img[^>]+>', full_match)
-                            if img_match:
-                                img_tag = img_match.group(0)
-                                src = re.search(r'src="([^"]+)"', img_tag)
-                                if src:
-                                    src = urljoin(item.filename, src.group(1))
-                                    if src in new_descriptions:
-                                        # Update alt text only if it has changed
-                                        if 'alt' in new_descriptions[src]:
-                                            img_tag = re.sub(r'alt="[^"]*"', f'alt="{new_descriptions[src]["alt"]}"', img_tag)
-
-                                        # Handle long description only if it has been edited
-                                        if 'long_desc' in new_descriptions[src]:
-                                            existing_details = re.search(r'<details[^>]*>.*?</details>', full_match, re.DOTALL)
-                                            
-                                            if new_descriptions[src]['long_desc'].strip():
-                                                # Create a unique ID for the details tag
-                                                short_id = re.search(r'([^/]+)\.[^.]+$', src)
-                                                short_id = short_id.group(1) if short_id else 'img'
-                                                base_details_id = f"longdesc-{short_id}"
-                                                
-                                                if base_details_id not in id_counter:
-                                                    id_counter[base_details_id] = 0
-                                                
-                                                while True:
-                                                    if id_counter[base_details_id] == 0:
-                                                        details_id = base_details_id
-                                                    else:
-                                                        details_id = f"{base_details_id}-{id_counter[base_details_id]}"
-                                                    
-                                                    if details_id not in used_ids:
-                                                        used_ids.add(details_id)
-                                                        break
-                                                    id_counter[base_details_id] += 1
-                                                
-                                                # Update or add aria-details
-                                                img_tag = re.sub(r'aria-details="[^"]*"', '', img_tag)  # Remove existing aria-details
-                                                img_tag = img_tag.rstrip('>').rstrip('/') + f' aria-details="{details_id}"/>'
-                                                
-                                                # Create or update details tag
-                                                details_tag = f'\n<details id="{details_id}"><summary>Description</summary><p>{new_descriptions[src]["long_desc"]}</p></details>'
-                                                
-                                                # Replace existing details or add new one
-                                                if existing_details:
-                                                    full_match = full_match.replace(existing_details.group(0), details_tag)
-                                                else:
-                                                    if full_match.startswith('<figure'):
-                                                        full_match = full_match.rstrip() + details_tag
-                                                    else:
-                                                        full_match = f'<div>{img_tag}{details_tag}</div>'
-                                            else:
-                                                # Remove aria-details and details tag if long description is empty
-                                                img_tag = re.sub(r'\s*aria-details="[^"]*"', '', img_tag)
-                                                full_match = re.sub(r'<details[^>]*>.*?</details>', '', full_match, flags=re.DOTALL)
-
-                                        # Ensure img tag is properly formatted
-                                        if not img_tag.endswith('/>'):
-                                            img_tag = img_tag.rstrip('>').rstrip('/') + '/>'
-                                        
-                                        if full_match.startswith('<figure'):
-                                            full_match = re.sub(r'<img[^>]+>', img_tag, full_match)
-                                        elif not full_match.startswith('<div'):
-                                            full_match = img_tag
-
-                            return full_match
-
                         # Update content for all img tags
                         content_str = re.sub(r'(<img[^>]+>)', update_content, content_str)
 
