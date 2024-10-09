@@ -79,6 +79,9 @@ def update_epub_descriptions(epub_path, new_descriptions):
     temp_dir = tempfile.mkdtemp()
     new_epub_path = os.path.join(temp_dir, 'updated_' + os.path.basename(epub_path))
     
+    used_ids = set()
+    id_counter = {}
+
     with zipfile.ZipFile(epub_path, 'r') as zip_ref:
         with zipfile.ZipFile(new_epub_path, 'w', zipfile.ZIP_DEFLATED) as new_zip:
             # Ensure mimetype is the first file
@@ -137,20 +140,8 @@ def update_epub_descriptions(epub_path, new_descriptions):
                         encoding = 'utf-8'  # Force UTF-8 encoding
                         content_str = content.decode(encoding, errors='ignore')
                         
-                        # Keep track of used IDs to prevent duplicates
-                        used_ids = set()
-                        
-                        def generate_unique_id(base_id):
-                            unique_id = base_id
-                            counter = 1
-                            while unique_id in used_ids:
-                                unique_id = f"{base_id}-{counter}"
-                                counter += 1
-                            used_ids.add(unique_id)
-                            return unique_id
-
-                        # Update img tags and add/update details tags
                         def update_content(match):
+                            nonlocal used_ids, id_counter
                             full_match = match.group(1)
                             img_match = re.search(r'<img[^>]+>', full_match)
                             if img_match:
@@ -162,10 +153,24 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                         # Update alt text
                                         img_tag = re.sub(r'alt="[^"]*"', f'alt="{new_descriptions[src]["alt"]}"', img_tag)
                                         
-                                        # Create a shorter ID for the details tag
+                                        # Create a unique ID for the details tag
                                         short_id = re.search(r'([^/]+)\.[^.]+$', src)
                                         short_id = short_id.group(1) if short_id else 'img'
-                                        details_id = f"longdesc-{short_id}"
+                                        base_details_id = f"longdesc-{short_id}"
+                                        
+                                        if base_details_id not in id_counter:
+                                            id_counter[base_details_id] = 0
+                                        
+                                        while True:
+                                            if id_counter[base_details_id] == 0:
+                                                details_id = base_details_id
+                                            else:
+                                                details_id = f"{base_details_id}-{id_counter[base_details_id]}"
+                                            
+                                            if details_id not in used_ids:
+                                                used_ids.add(details_id)
+                                                break
+                                            id_counter[base_details_id] += 1
                                         
                                         if 'long_desc' in new_descriptions[src] and new_descriptions[src]['long_desc'].strip():
                                             # Always update or add aria-details to match the details id
