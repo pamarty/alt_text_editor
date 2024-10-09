@@ -153,7 +153,51 @@ def update_epub_descriptions(epub_path, new_descriptions):
 
     with zipfile.ZipFile(epub_path, 'r') as zip_ref:
         with zipfile.ZipFile(new_epub_path, 'w', zipfile.ZIP_DEFLATED) as new_zip:
-            # ... [Rest of the function remains unchanged] ...
+            # Ensure mimetype is the first file
+            if 'mimetype' in zip_ref.namelist():
+                new_zip.writestr('mimetype', zip_ref.read('mimetype'), compress_type=zipfile.ZIP_STORED)
+
+            # Process OPF file
+            opf_path = next((f for f in zip_ref.namelist() if f.endswith('.opf')), None)
+            if opf_path:
+                with zip_ref.open(opf_path) as opf_file:
+                    opf_content = opf_file.read()
+                    encoding = 'utf-8'  # Force UTF-8 encoding
+                    opf_content = opf_content.decode(encoding, errors='ignore')
+                    parser = etree.XMLParser(recover=True, encoding=encoding)
+                    opf_tree = etree.fromstring(opf_content.encode(encoding), parser=parser)
+                    
+                    ns = {'opf': 'http://www.idpf.org/2007/opf'}
+                    
+                    # Ensure cover image is correctly specified
+                    metadata = opf_tree.find('.//opf:metadata', namespaces=ns)
+                    cover_meta = metadata.find('meta[@name="cover"]')
+                    if cover_meta is None:
+                        cover_meta = etree.SubElement(metadata, 'meta', name="cover", content="cover-image")
+                    
+                    manifest = opf_tree.find('.//opf:manifest', namespaces=ns)
+                    cover_item = manifest.find('opf:item[@id="cover-image"]', namespaces=ns)
+                    if cover_item is None:
+                        cover_item = etree.SubElement(manifest, 'item', id="cover-image", href="images/cover.jpg", media_type="image/jpeg")
+                    
+                    # Ensure correct MIME types for content files
+                    for item in manifest.findall('opf:item', namespaces=ns):
+                        href = item.get('href')
+                        if href.endswith('.xhtml'):
+                            item.set('media-type', 'application/xhtml+xml')
+                        elif href.endswith('.html') or href.endswith('.htm'):
+                            item.set('media-type', 'text/html')
+                        elif href.endswith('.ncx'):
+                            item.set('media-type', 'application/x-dtbncx+xml')
+                    
+                    spine = opf_tree.find('.//opf:spine', namespaces=ns)
+                    cover_itemref = spine.find('opf:itemref[@idref="cover"]', namespaces=ns)
+                    if cover_itemref is None:
+                        cover_itemref = etree.Element('itemref', idref="cover")
+                        spine.insert(0, cover_itemref)
+                    
+                    new_opf_content = etree.tostring(opf_tree, encoding=encoding, xml_declaration=True).decode(encoding)
+                    new_zip.writestr(opf_path, new_opf_content.encode(encoding))
 
             # Process content files
             for item in zip_ref.infolist():
