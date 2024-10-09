@@ -162,22 +162,27 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                         # Update alt text
                                         img_tag = re.sub(r'alt="[^"]*"', f'alt="{new_descriptions[src]["alt"]}"', img_tag)
                                         
-                                        # Extract the existing aria-details value if it exists
-                                        aria_details_match = re.search(r'aria-details="([^"]*)"', img_tag)
-                                        existing_aria_details = aria_details_match.group(1) if aria_details_match else None
-                                        
-                                        # Create a shorter ID for the details tag
-                                        short_id = re.search(r'([^/]+)\.[^.]+$', src)
-                                        short_id = short_id.group(1) if short_id else 'img'
-                                        short_details_id = f"longdesc-{short_id}"
-                                        
+                                        # Handle long description
+                                        base_id = generate_valid_id(src)
+                                        details_id = generate_unique_id(base_id)
                                         if 'long_desc' in new_descriptions[src] and new_descriptions[src]['long_desc'].strip():
-                                            # Add aria-details only if it doesn't exist
-                                            if not existing_aria_details:
-                                                img_tag = img_tag.rstrip('>').rstrip('/') + f' aria-details="{short_details_id}"/>'
+                                            # Add or update aria-details
+                                            if 'aria-details' not in img_tag:
+
+# Generate the valid ID for the details element
+details_id = generate_valid_id(src)
+
+# Ensure the img_tag includes the correct aria-details attribute
+img_tag = img_tag.rstrip('>').rstrip('/') + f' aria-details="{details_id}"/>'
+img_tag = re.sub(r'aria-details="[^"]*"', f'aria-details="{details_id}"', img_tag)
+
+# Generate the corresponding <details> tag using the same details_id
+details_tag = f'<details id="{details_id}"><summary>Description</summary><p>{{new_descriptions[src]["long_desc"]}}</p></details>'
+                                            else:
+                                                img_tag = re.sub(r'aria-details="[^"]*"', f'aria-details="{details_id}"', img_tag)
                                             
-                                            # Create or update details tag (using the new shorter ID)
-                                            details_tag = f'\n<details id="{short_details_id}"><summary>Description</summary><p>{new_descriptions[src]["long_desc"]}</p></details>'
+                                            # Create or update details tag
+                                            details_tag = f'<details id="{details_id}"><summary>Description</summary><p>{new_descriptions[src]["long_desc"]}</p></details>'
                                             
                                             # Check if we're inside a <figure> tag
                                             if full_match.startswith('<figure'):
@@ -185,14 +190,23 @@ def update_epub_descriptions(epub_path, new_descriptions):
                                                 full_match = full_match.rstrip() + details_tag
                                             else:
                                                 # For inline images, wrap both img and details in a div
-                                                full_match = f'<div>{img_tag}{details_tag}</div>'
+                                                full_match = f'<div>{img_tag}\n{details_tag}</div>'
                                         else:
                                             # Remove aria-details if there's no long description
                                             img_tag = re.sub(r'\s*aria-details="[^"]*"', '', img_tag)
                                         
                                         # Ensure img tag is properly formatted
                                         if not img_tag.endswith('/>'):
-                                            img_tag = img_tag.rstrip('>').rstrip('/') + '/>'
+
+# Generate the valid ID for the details element
+details_id = generate_valid_id(src)
+
+# Ensure the img_tag includes the correct aria-details attribute
+img_tag = img_tag.rstrip('>').rstrip('/') + f' aria-details="{details_id}"/>'
+img_tag = re.sub(r'aria-details="[^"]*"', f'aria-details="{details_id}"', img_tag)
+
+# Generate the corresponding <details> tag using the same details_id
+details_tag = f'<details id="{details_id}"><summary>Description</summary><p>{{new_descriptions[src]["long_desc"]}}</p></details>'
                                         
                                         if full_match.startswith('<figure'):
                                             full_match = re.sub(r'<img[^>]+>', img_tag, full_match)
